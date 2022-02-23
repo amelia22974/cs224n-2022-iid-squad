@@ -182,6 +182,90 @@ class BiDAFAttention(nn.Module):
 
         return s
 
+class CoAttention(nn.Module):
+    """Coattention as described in "Dynamic Coattention Networks".
+
+    A two-way attention between context and question. Performs a second level
+    attention computation - attending over representations that are attention outputs.
+
+
+    The output of this layer is the concatenation of [context, c2q_attention,
+    context * c2q_attention, context * q2c_attention]. This concatenation allows
+    the attention vector at each timestep, along with the embeddings from
+    previous layers, to flow through the attention layer to the modeling layer.
+    The output has shape (batch_size, context_len, 8 * hidden_size).
+
+    Args:
+        hidden_size (int): Size of hidden activations.
+        drop_prob (float): Probability of zero-ing out activations.
+    """
+    def __init__(self, hidden_size, drop_prob=0.1):
+        pass
+        super(CoAttention, self).__init__()
+        self.drop_prob = drop_prob
+        self.hidden_size = hidden_size
+        #self.c_weight = nn.Parameter(torch.zeros(hidden_size, 1))
+        #self.q_weight = nn.Parameter(torch.zeros(hidden_size, 1))
+        #self.cq_weight = nn.Parameter(torch.zeros(1, 1, hidden_size))
+        #for weight in (self.c_weight, self.q_weight, self.cq_weight):
+        #    nn.init.xavier_uniform_(weight)
+        #self.bias = nn.Parameter(torch.zeros(1))
+
+    def forward(self, c, q, c_mask, q_mask):
+        pass
+        #batch_size, c_len, _ = c.size()
+        #q_len = q.size(1)
+        #s = self.get_similarity_matrix(c, q)        # (batch_size, c_len, q_len)
+        #c_mask = c_mask.view(batch_size, c_len, 1)  # (batch_size, c_len, 1)
+        #q_mask = q_mask.view(batch_size, 1, q_len)  # (batch_size, 1, q_len)
+        #s1 = masked_softmax(s, q_mask, dim=2)       # (batch_size, c_len, q_len)
+        #s2 = masked_softmax(s, c_mask, dim=1)       # (batch_size, c_len, q_len)
+
+        # (bs, c_len, q_len) x (bs, q_len, hid_size) => (bs, c_len, hid_size)
+        #a = torch.bmm(s1, q)
+        # (bs, c_len, c_len) x (bs, c_len, hid_size) => (bs, c_len, hid_size)
+        #b = torch.bmm(torch.bmm(s1, s2.transpose(1, 2)), c)
+
+        #x = torch.cat([c, a, c * a, c * b], dim=2)  # (bs, c_len, 4 * hid_size)
+
+        #return x
+
+class SelfAttention(nn.Module):
+    """Self attention as described in the paper: https://www.microsoft.com/en-us/research/wp-content/uploads/2017/05/r-net.pdf
+    Args:
+        hidden_size (int): Size of hidden activations.
+        drop_prob (float): Probability of zero-ing out activations.
+    """
+    def __init__(self, hidden_size, drop_prob=0.1):
+        pass
+        #super(BiDAFAttention, self).__init__()
+        #self.drop_prob = drop_prob
+        #self.c_weight = nn.Parameter(torch.zeros(hidden_size, 1))
+        #self.q_weight = nn.Parameter(torch.zeros(hidden_size, 1))
+        #self.cq_weight = nn.Parameter(torch.zeros(1, 1, hidden_size))
+        #for weight in (self.c_weight, self.q_weight, self.cq_weight):
+        #    nn.init.xavier_uniform_(weight)
+        #self.bias = nn.Parameter(torch.zeros(1))
+
+    def forward(self, c, q, c_mask, q_mask):
+        pass
+        #batch_size, c_len, _ = c.size()
+        #q_len = q.size(1)
+        #s = self.get_similarity_matrix(c, q)        # (batch_size, c_len, q_len)
+        #c_mask = c_mask.view(batch_size, c_len, 1)  # (batch_size, c_len, 1)
+        #q_mask = q_mask.view(batch_size, 1, q_len)  # (batch_size, 1, q_len)
+        #s1 = masked_softmax(s, q_mask, dim=2)       # (batch_size, c_len, q_len)
+        #s2 = masked_softmax(s, c_mask, dim=1)       # (batch_size, c_len, q_len)
+
+        # (bs, c_len, q_len) x (bs, q_len, hid_size) => (bs, c_len, hid_size)
+        #a = torch.bmm(s1, q)
+        # (bs, c_len, c_len) x (bs, c_len, hid_size) => (bs, c_len, hid_size)
+        #b = torch.bmm(torch.bmm(s1, s2.transpose(1, 2)), c)
+
+        #x = torch.cat([c, a, c * a, c * b], dim=2)  # (bs, c_len, 4 * hid_size)
+
+        #return x
+
 
 class BiDAFOutput(nn.Module):
     """Output layer used by BiDAF for question answering.
