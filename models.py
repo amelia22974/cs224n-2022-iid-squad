@@ -92,7 +92,7 @@ class BiDAFCoattended(nn.Module):
         drop_prob (float): Dropout probability.
     """
     def __init__(self, word_vectors, hidden_size, drop_prob=0.):
-        super(BiDAF, self).__init__()
+        super(BiDAFCoattended, self).__init__()
         self.emb = layers.Embedding(word_vectors=word_vectors,
                                     hidden_size=hidden_size,
                                     drop_prob=drop_prob)

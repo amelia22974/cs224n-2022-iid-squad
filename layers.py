@@ -144,6 +144,7 @@ class BiDAFAttention(nn.Module):
         batch_size, c_len, _ = c.size()
         q_len = q.size(1)
         s = self.get_similarity_matrix(c, q)        # (batch_size, c_len, q_len)
+        print("Similarity matrix size", s.size(), q_mask.size(), c_mask.size())
         c_mask = c_mask.view(batch_size, c_len, 1)  # (batch_size, c_len, 1)
         q_mask = q_mask.view(batch_size, 1, q_len)  # (batch_size, 1, q_len)
         s1 = masked_softmax(s, q_mask, dim=2)       # (batch_size, c_len, q_len)
@@ -206,14 +207,14 @@ class CoAttention(nn.Module):
         self.hidden_size = hidden_size
         #self.c_weight = nn.Parameter(torch.zeros(hidden_size, 1))
         # apply a linear layer to q 
-        self.q_proj = nn.Linear(torch.zeros(hidden_size, 1), bias=True)
+        self.q_proj = nn.Linear(hidden_size, hidden_size, bias=True)
 
         self.c_sentinel = nn.Parameter(torch.zeros(hidden_size, 1))
         self.q_sentinel = nn.Parameter(torch.zeros(hidden_size, 1))
         
-        for weight in (self.q_proj, self.c_sentinel, self.q_sentinel):
+        for weight in (self.c_sentinel, self.q_sentinel):
             nn.init.xavier_uniform_(weight)
-        #self.bias = nn.Parameter(torch.zeros(1))
+
         self.softmax = torch.nn.Softmax(dim=0)
         
         #TODO:check dimensions
@@ -224,6 +225,7 @@ class CoAttention(nn.Module):
     def forward(self, c, q, c_mask, q_mask):
         
         batch_size, c_len, _ = c.size()
+
         q_len = q.size(1)
 
         # perform one linear layer on q
@@ -231,13 +233,14 @@ class CoAttention(nn.Module):
         q_prime = torch.tanh(q_prime)
 
         # get an affinity matrix
-        L = self.get_affinity_matrix(c, q_prime, self.c_sentinel, self.q_sentinel) # (c_len + 1, q_len + 1)
-        alphas = self.softmax(L)
+        L = self.get_affinity_matrix(c, q_prime, self.c_sentinel, self.q_sentinel, batch_size) # (c_len + 1, q_len + 1)
+        #alphas = self.softmax(L)
         #s = self.get_similarity_matrix(c, q)        # (batch_size, c_len, q_len)
-        #c_mask = c_mask.view(batch_size, c_len, 1)  # (batch_size, c_len, 1)
-        #q_mask = q_mask.view(batch_size, 1, q_len)  # (batch_size, 1, q_len)
-        alphas = masked_softmax(L, c_mask, dim=1)       # (batch_size, c_len, q_len) --? is this actually 2nd dim hidden size
-        betas = masked_softmax(L, q_mask, dim=2)       # (batch_size, c_len, q_len)  --? is this actually 2nd dim hidden size
+        c_mask = c_mask.view(batch_size, c_len, 1)  # (batch_size, c_len, 1)
+        q_mask = q_mask.view(batch_size, 1, q_len)  # (batch_size, 1, q_len)
+        print("size of L", L[:, :-1, :-1].size(), c_mask.size(), q_mask.size())
+        alphas = masked_softmax(L[:, :-1, :-1], c_mask, dim=1)       # (batch_size, c_len, q_len) --? is this actually 2nd dim hidden size
+        betas = masked_softmax(L[:, :-1, :-1], q_mask, dim=1)       # (batch_size, c_len, q_len)  --? is this actually 2nd dim hidden size
 
         # (bs, c_len, q_len) x (bs, q_len, hid_size) => (bs, c_len, hid_size)
         a = torch.bmm(alphas, q)
@@ -246,24 +249,27 @@ class CoAttention(nn.Module):
 
         s = torch.bmm(alphas, b)
 
-        concatted_s_a = torch.concat((s, a), dim=2)
+        concatted_s_a = torch.cat((s, a), dim=1)
         x = self.biLSTM(concatted_s_a)    # (bs, c_len, 4 * hid_size)
-
-        #apply dropout
-        x = self.dropout(x)
+        print(s.size(), x[1][0].size())
+        
+        
+        #apply dropout?/how to apply final layer
+        x = self.dropout(x[0])
 
         return x
     
-    def get_affinity_matrix(self, c, q, c_sentinel, q_sentinel):
+    def get_affinity_matrix(self, c, q, c_sentinel, q_sentinel, batch_length):
         
         affinity_dim = self.hidden_size + 1
         # TODO: concat all cs together
-        cs = torch.concat((c, c_sentinel), dim=0)
+        cs = torch.cat((c, c_sentinel.unsqueeze(0).expand(batch_length, -1, -1).transpose(1,2)), dim=1)
         # TODO: concat all qs together
-        qs = torch.concat((q, q_sentinel), dim=0)
-        # TODO: actually calculate the affinities
-        # return a matrix containing all the affinities; for now just make it all zeros
-        L = torch.bmm(cs, qs)
+        qs = torch.cat((q, q_sentinel.unsqueeze(0).expand(batch_length, -1, -1).transpose(1,2)), dim=1)
+        
+        # return a matrix containing all the affinities
+        
+        L = torch.bmm(cs, qs.transpose(1,2))
 
         return L
 
@@ -278,6 +284,7 @@ class SelfAttention(nn.Module):
         super(SelfAttention, self).__init__()
         self.drop_prob = drop_prob
         self.layers = layers
+        self.hidden_size
         
         # build linear layers -- follow self attention strategy given in the paper, check that this makes sense
         self.V = nn.Linear(hidden_size, 1, bias=False)
