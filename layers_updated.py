@@ -214,13 +214,16 @@ class CoAttention(nn.Module):
         
         for weight in (self.c_sentinel, self.q_sentinel):
             nn.init.xavier_uniform_(weight)
+
+        self.softmax = torch.nn.Softmax(dim=0)
         
         #TODO:check dimensions
-        self.biLSTM = torch.nn.LSTM(2*self.hidden_size, self.hidden_size, bidirectional=True)
+        self.biLSTM = torch.nn.LSTM(self.hidden_size, self.hidden_size, bidirectional=True)
 
         self.dropout = torch.nn.Dropout(p=self.drop_prob)
 
     def forward(self, c, q, c_mask, q_mask):
+        
         batch_size, c_len, _ = c.size()
 
         q_len = q.size(1)
@@ -229,46 +232,46 @@ class CoAttention(nn.Module):
         q_prime = self.q_proj(q)
         q_prime = torch.tanh(q_prime)
 
-        # TODO: concat all cs together
-        cs = torch.cat((c, self.c_sentinel.unsqueeze(0).expand(batch_size, -1, -1).transpose(1,2)), dim=1)
-        # TODO: concat all qs together
-        qs = torch.cat((q_prime, self.q_sentinel.unsqueeze(0).expand(batch_size, -1, -1).transpose(1,2)), dim=1)
-
         # get an affinity matrix
-        L = self.get_affinity_matrix(cs, qs) # (c_len + 1, q_len + 1)
-
-        #append additional vector of masks to c_mask for c_sentinel
+        L = self.get_affinity_matrix(c, q_prime, self.c_sentinel, self.q_sentinel, batch_size) # (c_len + 1, q_len + 1)
+        #alphas = self.softmax(L)
+        #s = self.get_similarity_matrix(c, q)        # (batch_size, c_len, q_len)
         c_mask = c_mask.view(batch_size, c_len, 1)  # (batch_size, c_len, 1)
-        c_mask = torch.cat((c_mask, c_mask[:,-2:-1,:]), dim=1)
-
-        #append additional vector of masks to q_mask for q_sentinel
         q_mask = q_mask.view(batch_size, 1, q_len)  # (batch_size, 1, q_len)
-        q_mask = torch.cat((q_mask, q_mask[:, :, -2:-1]), dim=2)
+        print("size of L", L[:, :-1, :-1].size(), c_mask.size(), q_mask.size())
+        alphas = masked_softmax(L[:, :-1, :-1], c_mask, dim=1)       # (batch_size, c_len, q_len) --? is this actually 2nd dim hidden size
+        betas = masked_softmax(L[:, :-1, :-1], q_mask, dim=1)       # (batch_size, c_len, q_len)  --? is this actually 2nd dim hidden size
 
-        alphas = masked_softmax(L, q_mask, dim=2)       # (batch_size, c_len, q_len) 
-        betas = masked_softmax(L, c_mask, dim=1)       # (batch_size, c_len, q_len)  
         # (bs, c_len, q_len) x (bs, q_len, hid_size) => (bs, c_len, hid_size)
-        
-        a = torch.bmm(alphas, qs)
+        a = torch.bmm(alphas, q)
         # (bs, c_len, c_len) x (bs, c_len, hid_size) => (bs, c_len, hid_size)
-        b = torch.bmm(betas.transpose(1, 2), cs)
+        b = torch.bmm(betas.transpose(1, 2), c)
 
         s = torch.bmm(alphas, b)
 
-        concatted_s_a = torch.cat((s, a), dim=2)
-        # currently LSTM is input_dim hidden_size, output_dim hidden_size
-        x, _ = self.biLSTM(concatted_s_a)    
-
-        x = self.dropout(x)
-        x = x[:, :-1, :]
+        concatted_s_a = torch.cat((s, a), dim=1)
+        x = self.biLSTM(concatted_s_a)    # (bs, c_len, 4 * hid_size)
+        print(s.size(), x[1][0].size())
+        
+        
+        #apply dropout?/how to apply final layer
+        x = self.dropout(x[0])
 
         return x
     
-    def get_affinity_matrix(self, cs, qs):
-
+    def get_affinity_matrix(self, c, q, c_sentinel, q_sentinel, batch_length):
+        
+        affinity_dim = self.hidden_size + 1
+        # TODO: concat all cs together
+        cs = torch.cat((c, c_sentinel.unsqueeze(0).expand(batch_length, -1, -1).transpose(1,2)), dim=1)
+        # TODO: concat all qs together
+        qs = torch.cat((q, q_sentinel.unsqueeze(0).expand(batch_length, -1, -1).transpose(1,2)), dim=1)
+        
+        # return a matrix containing all the affinities
+        
         L = torch.bmm(cs, qs.transpose(1,2))
 
-        return L 
+        return L
 
 class SelfAttention(nn.Module):
     """Self attention as described in the paper: https://www.microsoft.com/en-us/research/wp-content/uploads/2017/05/r-net.pdf
@@ -333,42 +336,3 @@ class BiDAFOutput(nn.Module):
         log_p2 = masked_softmax(logits_2.squeeze(), mask, log_softmax=True)
 
         return log_p1, log_p2
-
-class BiDAFCoattendedOutput(nn.Module):
-    """Output layer used by BiDAF for question answering.
-
-    Computes a linear transformation of the attention and modeling
-    outputs, then takes the softmax of the result to get the start pointer.
-    A bidirectional LSTM is then applied the modeling output to produce `mod_2`.
-    A second linear+softmax of the attention output and `mod_2` is used
-    to get the end pointer.
-
-    Args:
-        hidden_size (int): Hidden size used in the BiDAF model.
-        drop_prob (float): Probability of zero-ing out activations.
-    """
-    def __init__(self, hidden_size, drop_prob):
-        super(BiDAFCoattendedOutput, self).__init__()
-        self.att_linear_1 = nn.Linear(4 * hidden_size, 1)
-        self.mod_linear_1 = nn.Linear(2 * hidden_size, 1)
-
-        self.rnn = RNNEncoder(input_size=2 * hidden_size,
-                              hidden_size=hidden_size,
-                              num_layers=1,
-                              drop_prob=drop_prob)
-
-        self.att_linear_2 = nn.Linear(4 * hidden_size, 1)
-        self.mod_linear_2 = nn.Linear(2 * hidden_size, 1)
-
-    def forward(self, att, mod, mask):
-        # Shapes: (batch_size, seq_len, 1)
-        logits_1 = self.att_linear_1(att) + self.mod_linear_1(mod)
-        mod_2 = self.rnn(mod, mask.sum(-1))
-        logits_2 = self.att_linear_2(att) + self.mod_linear_2(mod_2)
-
-        # Shapes: (batch_size, seq_len)
-        log_p1 = masked_softmax(logits_1.squeeze(), mask, log_softmax=True)
-        log_p2 = masked_softmax(logits_2.squeeze(), mask, log_softmax=True)
-
-        return log_p1, log_p2
-
