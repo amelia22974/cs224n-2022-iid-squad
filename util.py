@@ -109,7 +109,7 @@ class SQuAD2(data.Dataset):
         use_v2 (bool): Whether to use SQuAD 2.0 questions. Otherwise only use SQuAD 1.1.
     """
     def __init__(self, data_path, use_v2=True):
-        super(SQuAD, self).__init__()
+        super(SQuAD2, self).__init__()
 
         dataset = np.load(data_path)
         self.context_idxs = torch.from_numpy(dataset['context_idxs']).long()
