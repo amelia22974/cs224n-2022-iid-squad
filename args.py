@@ -5,6 +5,7 @@ Author:
 """
 
 import argparse
+from pickle import FALSE
 
 
 def get_setup_args():
@@ -134,6 +135,10 @@ def get_train_args():
                         type=float,
                         default=0.999,
                         help='Decay rate for exponential moving average of parameters.')
+    parser.add_argument('--span_corrupt',
+                        type=bool,
+                        default=False,
+                        help='Whether or not to span corrupt the training data. The corruption occurs to the context.')
 
     args = parser.parse_args()
 
