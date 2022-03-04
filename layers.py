@@ -185,7 +185,7 @@ class BiDAFAttention(nn.Module):
 
 class CoAttention(nn.Module):
     """Coattention as described in "Dynamic Coattention Networks".
-
+    TODO: try expanding the size of the coattended output to see if we get better results (e.g. expand the output dim)
     A two-way attention between context and question. Performs a second level
     attention computation - attending over representations that are attention outputs.
 
@@ -280,19 +280,33 @@ class SelfAttention(nn.Module):
         pass
         super(SelfAttention, self).__init__()
         self.drop_prob = drop_prob
-        self.layers = layers
-        self.hidden_size
+        self.layers = layers # how many layers should we apply?
+        self.hidden_size = hidden_size
+        self.input_dim = input_dim
         
         # build linear layers -- follow self attention strategy given in the paper, check that this makes sense
+        
+        self.W1 = nn.Linear(self.input_dim, self.hidden_size, bias=False)
+        self.W2 = nn.Linear(self.input_dim, self.hidden_size, bias=False)
         self.V = nn.Linear(hidden_size, 1, bias=False)
-        self.W1 = nn.Linear(input_dim, hidden_size, bias=False)
-        self.W2 = nn.Linear(input_dim, hidden_size, bias=False)
         self.tanh = nn.Tanh()
-        self.g = nn.Sequential(nn.Linear(), nn.Sigmoid())
-        self.rnn = nn.GRU(input_dim * 2, self.hidden_size, bidirectional=True, layers=self.layers, dropout=drop_prob)
+        self.softmax = nn.Softmax()
+        self.g = nn.Sequential(nn.Linear(2*self.input_dim, 2*self.input_dim, bias=False), nn.Sigmoid()) # do we need sigmoid here??
+        self.rnn = nn.GRU(input_dim , self.hidden_size/2, bidirectional=True, layers=self.layers, dropout=self.drop_prob) # can we expand the size of th emodel in any way? 
 
-    def forward(self, c, q, c_mask, q_mask):
-        pass
+    def forward(self, p, prev_att):
+        
+        prev_att = prev_att.copy()
+
+        #use W1
+        W1 = self.W1(p)
+        W2 = self.W2(p)
+        s = self.tanh(W1 + W2)
+        s = self.V(s)
+        a = self.Softmax(s)
+        # c: get sum
+        output, _ = self.rnn(a)
+        return F.dropout(output, self.drop_prob, self.training)
 
 
 

@@ -247,3 +247,4 @@ def add_train_test_args(parser):
                         type=str,
                         default=None,
                         help='Path to load as a model checkpoint.')
+    parser.add_argument('--self_attention', type=str, default=None, help="Write --self-attention Yes to get self-attention.")
