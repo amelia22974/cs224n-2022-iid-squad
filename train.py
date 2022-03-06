@@ -21,7 +21,9 @@ from models import BiDAF
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from ujson import load as json_load
-from util import collate_fn, SQuAD, SQuAD2
+from util import collate_fn, SQuAD, span_corrupt, back_translation
+from pathlib import Path
+
 
 
 def main(args):
@@ -74,9 +76,17 @@ def main(args):
     # Get data loader
     log.info('Building dataset...')
     train_dataset = SQuAD(args.train_record_file, args.use_squad_v2)
+    # data processing for span corruption
+
     if args.span_corrupt:
-        # SQuAD2 is the one with span corruption
-        train_dataset = SQuAD2(args.train_record_file, args.use_squad_v2)
+        # the one with span corruption
+        if not Path(args.train_span_corrupt_record_file).is_file():
+            span_corrupt(args.train_record_file, args.train_span_corrupt_record_file)
+        train_dataset = SQuAD(args.train_span_corrupt_record_file, args.use_squad_v2)
+    elif args.back_translation:
+        if not Path(args.train_back_translation_record_file).is_file():
+            back_translation(args.train_record_file, args.train_back_translation_record_file)
+        train_dataset = SQuAD(args.train_back_translation_record_file, args.use_squad_v2)
     train_loader = data.DataLoader(train_dataset,
                                    batch_size=args.batch_size,
                                    shuffle=True,
