@@ -3,6 +3,7 @@
 Author:
     Chris Chute (chute@stanford.edu)
 """
+from ast import Index
 import logging
 import os
 import queue
@@ -177,6 +178,22 @@ def span_corrupt(data_path, output_path):
                         y2s=y2s, 
                         ids=ids)
 
+
+def convert_to_string(indices, dictionary):
+    words = [dictionary[elem.item()] for elem in indices]
+    return " ".join(words)
+
+def convert_to_indices(string, dictionary):
+    string = string.split()
+    idxs = [dictionary[elem] for elem in string]
+    return " ".join(idxs)
+
+def translate(input, model, tokenizer):
+    batch = tokenizer([input], return_tensors="pt")
+    gen = model.generate(**batch)
+    output = tokenizer.batch_decode(gen, skip_special_tokens=True)
+    return output[0]
+
 def back_translation(data_path, output_path):
     """Stanford Question Answering Dataset (SQuAD).
 
@@ -217,6 +234,12 @@ def back_translation(data_path, output_path):
     de_en_tokenizer = AutoTokenizer.from_pretrained("Helsinki-NLP/opus-mt-de-en")
     de_en_model = AutoModelForSeq2SeqLM.from_pretrained("Helsinki-NLP/opus-mt-de-en")
 
+    word2idx = json.loads(open('./data/word2idx.json', 'r').read())
+    char2idx = json.loads(open('./data/char2idx.json', 'r').read())
+
+    idx2word = dict((v,k) for k,v in word2idx.items())
+    idx2char = dict((v,k) for k,v in char2idx.items())
+
     for idx in range(len(ids)): 
         new_y1 = y1s[idx]
         new_y2 = y2s[idx]
@@ -224,21 +247,35 @@ def back_translation(data_path, output_path):
         new_context_idxs = context_idxs[idx]
         new_context_chars_idxs = context_char_idxs[idx]
 
+        new_question_idxs = question_idxs[idx]
+        new_question_char_idxs = question_char_idxs[idx]
+        
         # retrieve the sentences to use for translation
-        context_string = 
-        query_string = []
+        context_string = convert_to_string(new_context_idxs, idx2word)
+        question_string = convert_to_string(new_question_idxs, idx2word)
 
+        trans_context_string = translate(translate(context_string, en_de_model, en_de_tokenizer), de_en_model, de_en_tokenizer)
+        trans_question_string = translate(translate(question_string, en_de_model, en_de_tokenizer), de_en_model, de_en_tokenizer)
 
-
-
+        
+        
+        
+        
+        
+        
         # apply the unsqueeze to properly concatenate the things
+        add_new_context_idxs = convert_to_indices(trans_context_string, word2idx)
         add_new_context_idxs = torch.unsqueeze(add_new_context_idxs, dim=0)
         context_idxs = torch.cat((context_idxs, add_new_context_idxs), 0)
 
+        # must edit this one
         add_new_context_chars_idxs = torch.unsqueeze(add_new_context_chars_idxs, dim=0)
         context_char_idxs = torch.cat((context_char_idxs, add_new_context_chars_idxs), 0)
 
-        question_idxs = torch.cat((question_idxs, torch.unsqueeze(question_idxs[idx], dim=0)), 0)
+        add_new_question_idxs = convert_to_indices(trans_question_string, word2idx)
+        question_idxs = torch.cat((question_idxs, torch.unsqueeze(add_new_question_idxs, dim=0)), 0)
+        
+        # must edit this one
         question_char_idxs = torch.cat((question_char_idxs, torch.unsqueeze(question_char_idxs[idx], dim=0)), 0)  
 
         y1s = torch.cat((y1s, torch.unsqueeze(new_y1, dim=0)), 0)
