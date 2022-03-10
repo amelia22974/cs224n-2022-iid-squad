@@ -5,6 +5,7 @@ Author:
 """
 
 import argparse
+from pickle import FALSE
 
 
 def get_setup_args():
@@ -134,6 +135,14 @@ def get_train_args():
                         type=float,
                         default=0.999,
                         help='Decay rate for exponential moving average of parameters.')
+    parser.add_argument('--span_corrupt',
+                        type=bool,
+                        default=False,
+                        help='Whether or not to span corrupt the training data. The corruption occurs to the context.')
+    parser.add_argument('--back_translation',
+                        type=bool,
+                        default=False,
+                        help='Whether or not to use backtranslation on the training data.')                    
 
     args = parser.parse_args()
 
@@ -200,6 +209,12 @@ def add_common_args(parser):
     parser.add_argument('--test_eval_file',
                         type=str,
                         default='./data/test_eval.json')
+    parser.add_argument('--train_span_corrupt_record_file',
+                        type=str,
+                        default='./data/train_span_corrupt.npz') 
+    parser.add_argument('--train_back_translation_record_file',
+                        type=str,
+                        default='./data/train_back_translation.npz')                                        
 
 
 def add_train_test_args(parser):
@@ -242,3 +257,4 @@ def add_train_test_args(parser):
                         type=str,
                         default=None,
                         help='Path to load as a model checkpoint.')
+    parser.add_argument('--self_attention', type=str, default=None, help="Write --self-attention Yes to get self-attention.")

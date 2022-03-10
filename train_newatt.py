@@ -17,13 +17,11 @@ import util
 from args import get_train_args
 from collections import OrderedDict
 from json import dumps
-from models import BiDAF
+from models import BiDAFCoattended, BiDAFSelfAttended
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from ujson import load as json_load
-from util import collate_fn, SQuAD, span_corrupt, back_translation
-from pathlib import Path
-
+from util import collate_fn, SQuAD
 
 
 def main(args):
@@ -48,9 +46,17 @@ def main(args):
 
     # Get model
     log.info('Building model...')
-    model = BiDAF(word_vectors=word_vectors,
-                  hidden_size=args.hidden_size,
-                  drop_prob=args.drop_prob)
+    # Load a model type that is different from the default
+    #  TODO: make this a series of options
+    if args.self_attention is not None:
+        model = BiDAFCoattended(word_vectors=word_vectors,
+                    hidden_size=args.hidden_size,
+                    drop_prob=args.drop_prob)
+    else:
+        model = BIDAFSelfAttended(word_vectors=word_vectors,
+                    hidden_size=args.hidden_size,
+                    drop_prob=args.drop_prob)
+
     model = nn.DataParallel(model, args.gpu_ids)
     if args.load_path:
         log.info(f'Loading checkpoint from {args.load_path}...')
@@ -76,17 +82,6 @@ def main(args):
     # Get data loader
     log.info('Building dataset...')
     train_dataset = SQuAD(args.train_record_file, args.use_squad_v2)
-    # data processing for span corruption
-
-    if args.span_corrupt:
-        # the one with span corruption
-        if not Path(args.train_span_corrupt_record_file).is_file():
-            span_corrupt(args.train_record_file, args.train_span_corrupt_record_file)
-        train_dataset = SQuAD(args.train_span_corrupt_record_file, args.use_squad_v2)
-    elif args.back_translation:
-        if not Path(args.train_back_translation_record_file).is_file():
-            back_translation(args.train_record_file, args.train_back_translation_record_file)
-        train_dataset = SQuAD(args.train_back_translation_record_file, args.use_squad_v2)
     train_loader = data.DataLoader(train_dataset,
                                    batch_size=args.batch_size,
                                    shuffle=True,
@@ -99,7 +94,6 @@ def main(args):
                                  num_workers=args.num_workers,
                                  collate_fn=collate_fn)
 
-    
     # Train
     log.info('Training...')
     steps_till_eval = args.eval_steps

@@ -3,6 +3,7 @@
 Author:
     Chris Chute (chute@stanford.edu)
 """
+from ast import Index
 import logging
 import os
 import queue
@@ -15,8 +16,10 @@ import torch.utils.data as data
 import tqdm
 import numpy as np
 import ujson as json
-
+import random
 from collections import Counter
+from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+
 
 
 class SQuAD(data.Dataset):
@@ -80,11 +83,216 @@ class SQuAD(data.Dataset):
                    self.y1s[idx],
                    self.y2s[idx],
                    self.ids[idx])
-
         return example
 
     def __len__(self):
         return len(self.valid_idxs)
+        
+def span_corrupt(data_path, output_path):
+    """Stanford Question Answering Dataset (SQuAD).
+
+    Each item in the dataset is a tuple with the following entries (in order):
+        - context_idxs: Indices of the words in the context.
+            Shape (context_len,).
+        - context_char_idxs: Indices of the characters in the context.
+            Shape (context_len, max_word_len).
+        - question_idxs: Indices of the words in the question.
+            Shape (question_len,).
+        - question_char_idxs: Indices of the characters in the question.
+            Shape (question_len, max_word_len).
+        - y1: Index of word in the context where the answer begins.
+            -1 if no answer.
+        - y2: Index of word in the context where the answer ends.
+            -1 if no answer.
+        - id: ID of the example.
+
+    Args:
+        data_path (str): Path to .npz file containing pre-processed dataset.
+        use_v2 (bool): Whether to use SQuAD 2.0 questions. Otherwise only use SQuAD 1.1.
+    """
+    
+    dataset = np.load(data_path)
+    context_idxs = torch.from_numpy(dataset['context_idxs']).long()
+    context_char_idxs = torch.from_numpy(dataset['context_char_idxs']).long()
+    question_idxs = torch.from_numpy(dataset['ques_idxs']).long()
+    question_char_idxs = torch.from_numpy(dataset['ques_char_idxs']).long()
+    y1s = torch.from_numpy(dataset['y1s']).long()
+    y2s = torch.from_numpy(dataset['y2s']).long()
+
+    ids = torch.from_numpy(dataset['ids']).long()
+    last_id = ids[-1].item()
+    for idx in range(len(ids)): 
+        new_y1 = y1s[idx]
+        new_y2 = y2s[idx]
+
+        new_context_idxs = context_idxs[idx]
+        new_context_chars_idxs = context_char_idxs[idx]
+
+        trunc_len = random.randint(4, int(len(new_context_idxs)*7/8))
+        trunc_doc = new_context_idxs[:trunc_len]
+        masked_content_len = int(trunc_len // 4) # we're always masking a quarter of the truncated content
+
+        end_prefix = ((trunc_len - masked_content_len) // 2) - 1
+        prefix = trunc_doc[:end_prefix]
+        masked_content = trunc_doc[end_prefix:end_prefix + masked_content_len]
+        masked_content = torch.tensor([0 for elem in masked_content]) # replace them with NULL tokens
+        suffix = trunc_doc[end_prefix + masked_content_len:]
+        add_new_context_idxs = torch.cat((prefix, masked_content, suffix, context_idxs[idx][trunc_len:]), 0) 
+
+        # handle self.context_char_idxs[idx]
+        prefix_char = new_context_chars_idxs[:end_prefix] 
+        masked_content_char = new_context_chars_idxs[end_prefix:end_prefix + masked_content_len]
+        masked_content_char = torch.tensor([[0] * masked_content_char.size()[1] for i in range(masked_content_char.size()[0])])
+        suffix_char = new_context_chars_idxs[end_prefix + masked_content_len:]
+        add_new_context_chars_idxs = torch.cat((prefix_char, masked_content_char, suffix_char), 0) 
+
+        # If the original answer is not preserved, then make sure that there is no answer.  
+        # Corrupting only part of the answer means that it won't always be a valid answer. 
+        if new_context_idxs[y1s[idx].item()] != add_new_context_idxs[y1s[idx].item()] \
+            or new_context_idxs[y2s[idx].item()] != add_new_context_idxs[y2s[idx].item()]:
+            new_y1, new_y2 = torch.tensor(-1), torch.tensor(-1)
+
+        # apply the unsqueeze to properly concatenate the things
+        add_new_context_idxs = torch.unsqueeze(add_new_context_idxs, dim=0)
+        context_idxs = torch.cat((context_idxs, add_new_context_idxs), 0)
+
+        add_new_context_chars_idxs = torch.unsqueeze(add_new_context_chars_idxs, dim=0)
+        context_char_idxs = torch.cat((context_char_idxs, add_new_context_chars_idxs), 0)
+
+        question_idxs = torch.cat((question_idxs, torch.unsqueeze(question_idxs[idx], dim=0)), 0)
+        question_char_idxs = torch.cat((question_char_idxs, torch.unsqueeze(question_char_idxs[idx], dim=0)), 0)  
+
+        y1s = torch.cat((y1s, torch.unsqueeze(new_y1, dim=0)), 0)
+        y2s = torch.cat((y2s, torch.unsqueeze(new_y2, dim=0)), 0)
+
+        add_id = torch.tensor(ids[-1].item() + last_id)
+        ids = torch.cat((ids, torch.unsqueeze(add_id, dim=0)), 0) 
+    
+    # save into a new file
+    np.savez_compressed(output_path, 
+                        context_idxs=context_idxs, 
+                        context_char_idxs=context_char_idxs, 
+                        ques_idxs=question_idxs, 
+                        ques_char_idxs=question_char_idxs, 
+                        y1s=y1s, 
+                        y2s=y2s, 
+                        ids=ids)
+
+
+def convert_to_string(indices, dictionary):
+    words = [dictionary[elem.item()] for elem in indices]
+    return " ".join(words)
+
+def convert_to_indices(string, dictionary):
+    string = string.split()
+    idxs = [dictionary[elem] for elem in string]
+    return " ".join(idxs)
+
+def translate(input, model, tokenizer):
+    batch = tokenizer([input], return_tensors="pt")
+    gen = model.generate(**batch)
+    output = tokenizer.batch_decode(gen, skip_special_tokens=True)
+    return output[0]
+
+def back_translation(data_path, output_path):
+    """Stanford Question Answering Dataset (SQuAD).
+
+    Each item in the dataset is a tuple with the following entries (in order):
+        - context_idxs: Indices of the words in the context.
+            Shape (context_len,).
+        - context_char_idxs: Indices of the characters in the context.
+            Shape (context_len, max_word_len).
+        - question_idxs: Indices of the words in the question.
+            Shape (question_len,).
+        - question_char_idxs: Indices of the characters in the question.
+            Shape (question_len, max_word_len).
+        - y1: Index of word in the context where the answer begins.
+            -1 if no answer.
+        - y2: Index of word in the context where the answer ends.
+            -1 if no answer.
+        - id: ID of the example.
+
+    Args:
+        data_path (str): Path to .npz file containing pre-processed dataset.
+        use_v2 (bool): Whether to use SQuAD 2.0 questions. Otherwise only use SQuAD 1.1.
+    """
+    
+    dataset = np.load(data_path)
+    context_idxs = torch.from_numpy(dataset['context_idxs']).long()
+    context_char_idxs = torch.from_numpy(dataset['context_char_idxs']).long()
+    question_idxs = torch.from_numpy(dataset['ques_idxs']).long()
+    question_char_idxs = torch.from_numpy(dataset['ques_char_idxs']).long()
+    y1s = torch.from_numpy(dataset['y1s']).long()
+    y2s = torch.from_numpy(dataset['y2s']).long()
+
+    ids = torch.from_numpy(dataset['ids']).long()
+    last_id = ids[-1].item()
+
+    en_de_tokenizer = AutoTokenizer.from_pretrained("Helsinki-NLP/opus-mt-en-de")
+    en_de_model = AutoModelForSeq2SeqLM.from_pretrained("Helsinki-NLP/opus-mt-en-de")
+
+    de_en_tokenizer = AutoTokenizer.from_pretrained("Helsinki-NLP/opus-mt-de-en")
+    de_en_model = AutoModelForSeq2SeqLM.from_pretrained("Helsinki-NLP/opus-mt-de-en")
+
+    word2idx = json.loads(open('./data/word2idx.json', 'r').read())
+    char2idx = json.loads(open('./data/char2idx.json', 'r').read())
+
+    idx2word = dict((v,k) for k,v in word2idx.items())
+    idx2char = dict((v,k) for k,v in char2idx.items())
+
+    for idx in range(len(ids)): 
+        new_y1 = y1s[idx]
+        new_y2 = y2s[idx]
+
+        new_context_idxs = context_idxs[idx]
+        new_context_chars_idxs = context_char_idxs[idx]
+
+        new_question_idxs = question_idxs[idx]
+        new_question_char_idxs = question_char_idxs[idx]
+        
+        # retrieve the sentences to use for translation
+        context_string = convert_to_string(new_context_idxs, idx2word)
+        question_string = convert_to_string(new_question_idxs, idx2word)
+
+        trans_context_string = translate(translate(context_string, en_de_model, en_de_tokenizer), de_en_model, de_en_tokenizer)
+        trans_question_string = translate(translate(question_string, en_de_model, en_de_tokenizer), de_en_model, de_en_tokenizer)
+
+        
+        
+        
+        
+        
+        
+        # apply the unsqueeze to properly concatenate the things
+        add_new_context_idxs = convert_to_indices(trans_context_string, word2idx)
+        add_new_context_idxs = torch.unsqueeze(add_new_context_idxs, dim=0)
+        context_idxs = torch.cat((context_idxs, add_new_context_idxs), 0)
+
+        # must edit this one
+        add_new_context_chars_idxs = torch.unsqueeze(add_new_context_chars_idxs, dim=0)
+        context_char_idxs = torch.cat((context_char_idxs, add_new_context_chars_idxs), 0)
+
+        add_new_question_idxs = convert_to_indices(trans_question_string, word2idx)
+        question_idxs = torch.cat((question_idxs, torch.unsqueeze(add_new_question_idxs, dim=0)), 0)
+        
+        # must edit this one
+        question_char_idxs = torch.cat((question_char_idxs, torch.unsqueeze(question_char_idxs[idx], dim=0)), 0)  
+
+        y1s = torch.cat((y1s, torch.unsqueeze(new_y1, dim=0)), 0)
+        y2s = torch.cat((y2s, torch.unsqueeze(new_y2, dim=0)), 0)
+
+        add_id = torch.tensor(ids[-1].item() + last_id)
+        ids = torch.cat((ids, torch.unsqueeze(add_id, dim=0)), 0) 
+    
+    # save into a new file
+    np.savez_compressed(output_path, 
+                        context_idxs=context_idxs, 
+                        context_char_idxs=context_char_idxs, 
+                        ques_idxs=question_idxs, 
+                        ques_char_idxs=question_char_idxs, 
+                        y1s=y1s, 
+                        y2s=y2s, 
+                        ids=ids)
 
 
 def collate_fn(examples):
