@@ -23,27 +23,49 @@ class Embedding(nn.Module):
         hidden_size (int): Size of hidden activations.
         drop_prob (float): Probability of zero-ing out activations
     """
-    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob):
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob, char_drop_prob, use_char_emb=False):
         super(Embedding, self).__init__()
+        self.use_char_emb = use_char_emb
         self.drop_prob = drop_prob
+        self.char_drop_prob = char_drop_prob
         self.embed = nn.Embedding.from_pretrained(word_vectors)
-        self.char_embed = nn.Embedding.from_pretrained(char_vectors)
-        char_embed_size = torch.size(dim = 0)
-        self.conv2d = nn.Conv2d(char_embed_size, hidden_size, kernel_size = (1,5))
+        self.char_embed = nn.Embedding.from_pretrained(char_vectors, freeze=False)
+        char_embed_size = char_vectors.size(1)
+        if use_char_emb:
+            self.conv2d = nn.Conv2d(char_embed_size, hidden_size, kernel_size = (1,5))
+            self.hwy = HighwayEncoder(2, hidden_size)
+            self.proj = nn.Linear(word_vectors.size(1)+hidden_size, hidden_size, bias=False)
+        else:
+            self.hwy = HighwayEncoder(2, hidden_size)
+            self.proj = nn.Linear(word_vectors.size(1), hidden_size, bias=False)
 
-        self.hwy = HighwayEncoder(2, hidden_size)
-        self.proj = nn.Linear(word_vectors.size(1), hidden_size, bias=False)
-
-    def forward(self, x):
-        emb = self.embed(x)   # (batch_size, seq_len, embed_size)
-        emb = F.dropout(emb, self.drop_prob, self.training)
         
-        char_emb = self.char_emb(x)
-        char_emb = F.dropout(char_emb, self.drop_prob, self.training)
-        char_emb = self.conv2d(char_emb)
 
-        emb = torch.cat([emb, char_emb])
+    def forward(self, x, y=None):
+        word_emb = self.embed(x)
+        word_emb = F.dropout(word_emb, self.drop_prob, self.training)
+        
+        if self.use_char_emb:
+            # (batch_size, seq_len, max_char, char_dim)
+            char_emb = self.char_embed(y)
+            # (batch_size, char_dim, max_char, seq_len)
+            char_emb = torch.transpose(char_emb, 1, 3)
+            # (batch_size, char_dim, seq_len, max_char)
+            char_emb = torch.transpose(char_emb, 2, 3)
+            # char_drop_prob = 0.05
+            char_emb = F.dropout(char_emb, self.char_drop_prob, self.training)
+            char_emb = self.conv2d(char_emb) 
+            
+            char_emb = F.relu(char_emb)
+            char_emb = torch.transpose(char_emb, 1, 2)
+            # apply maxpool 1d on the last dimension, kernel_size = max num of char per word
+            char_emb, _ = torch.max(char_emb, dim=3)
+            # want char_emb to be (batch_size, seq_len, hidden_size)
+            emb = torch.cat([word_emb, char_emb], dim=-1)
+        else:
+            emb = word_emb
 
+    
         emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
         emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
         return emb
@@ -329,6 +351,23 @@ class BiDAFOutput(nn.Module):
         self.mod_linear_2 = nn.Linear(2 * hidden_size, 1)
 
     def forward(self, att, mod, mask):
+        # # att: (batch_size, seq_len, 8H)
+        # # mod: (batch_size, seq_len, 2H)
+        # gm = torch.cat([att, mod], 2)
+        # # take the dot product of the hidden state with each of the columns of [G; M] 
+        # first_att = torch.dot(mod, gm)
+        # # take softmax over that -> beta_s
+        # beta_s = F.softmax(first_att)
+        # # a_s is the weighted (by attention distribution) sum of the hs
+        # a_s = torch.dot(beta_s, mod)
+        # # use a_s as input to the RNN -> output
+        # output = self.rnn(a_s)
+        # # take the dot product of this output with each of the columns of [G; M] 
+        # second_att = torch.dot(output, gm)
+        # # take softmax over that -> beta_e
+        # beta_e = F.softmax(second_att)
+        
+        # return beta_s, beta_e
         # Shapes: (batch_size, seq_len, 1)
         logits_1 = self.att_linear_1(att) + self.mod_linear_1(mod)
         mod_2 = self.rnn(mod, mask.sum(-1))
