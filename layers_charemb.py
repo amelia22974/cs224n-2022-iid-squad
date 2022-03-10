@@ -27,10 +27,12 @@ class Embedding(nn.Module):
         super(Embedding, self).__init__()
         self.use_char_emb = use_char_emb
         self.drop_prob = drop_prob
+        #New
         self.char_drop_prob = char_drop_prob
         self.embed = nn.Embedding.from_pretrained(word_vectors)
         self.char_embed = nn.Embedding.from_pretrained(char_vectors, freeze=False)
         char_embed_size = char_vectors.size(1)
+        
         if use_char_emb:
             self.conv2d = nn.Conv2d(char_embed_size, hidden_size, kernel_size = (1,5))
             self.hwy = HighwayEncoder(2, hidden_size)

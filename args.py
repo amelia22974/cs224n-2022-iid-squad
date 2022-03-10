@@ -142,7 +142,11 @@ def get_train_args():
     parser.add_argument('--back_translation',
                         type=bool,
                         default=False,
-                        help='Whether or not to use backtranslation on the training data.')                    
+                        help='Whether or not to use backtranslation on the training data.')
+    parser.add_argument('--use_char_emb',
+                        type=bool,
+                        default=False,
+                        help='Use character embedding')            
 
     args = parser.parse_args()
 
@@ -238,7 +242,7 @@ def add_train_test_args(parser):
                         help='Base directory for saving information.')
     parser.add_argument('--batch_size',
                         type=int,
-                        default=64,
+                        default=32,
                         help='Batch size per GPU. Scales automatically when \
                               multiple GPUs are available.')
     parser.add_argument('--use_squad_v2',

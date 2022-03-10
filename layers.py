@@ -38,6 +38,67 @@ class Embedding(nn.Module):
 
         return emb
 
+class EmbeddingWithChar(nn.Module):
+    """Embedding layer used by BiDAF, without the character-level component.
+
+    Word-level embeddings are further refined using a 2-layer Highway Encoder
+    (see `HighwayEncoder` class for details).
+
+    Args:
+        word_vectors (torch.Tensor): Pre-trained word vectors.
+        hidden_size (int): Size of hidden activations.
+        drop_prob (float): Probability of zero-ing out activations
+    """
+    def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob, char_drop_prob, use_char_emb=False):
+        super(EmbeddingWithChar, self).__init__()
+        self.use_char_emb = use_char_emb
+        self.drop_prob = drop_prob
+        #New
+        self.char_drop_prob = char_drop_prob
+        self.embed = nn.Embedding.from_pretrained(word_vectors)
+        self.char_embed = nn.Embedding.from_pretrained(char_vectors, freeze=False)
+        char_embed_size = char_vectors.size(1)
+        
+        if use_char_emb:
+            self.conv2d = nn.Conv2d(char_embed_size, hidden_size, kernel_size = (1,5))
+            self.hwy = HighwayEncoder(2, hidden_size)
+            self.proj = nn.Linear(word_vectors.size(1)+hidden_size, hidden_size, bias=False)
+        else:
+            self.hwy = HighwayEncoder(2, hidden_size)
+            self.proj = nn.Linear(word_vectors.size(1), hidden_size, bias=False)
+
+        
+
+    def forward(self, x, y=None):
+        word_emb = self.embed(x)
+        word_emb = F.dropout(word_emb, self.drop_prob, self.training)
+        
+        if self.use_char_emb:
+            # (batch_size, seq_len, max_char, char_dim)
+            char_emb = self.char_embed(y)
+            # (batch_size, char_dim, max_char, seq_len)
+            char_emb = torch.transpose(char_emb, 1, 3)
+            # (batch_size, char_dim, seq_len, max_char)
+            char_emb = torch.transpose(char_emb, 2, 3)
+            # char_drop_prob = 0.05
+            char_emb = F.dropout(char_emb, self.char_drop_prob, self.training)
+            char_emb = self.conv2d(char_emb) 
+            
+            char_emb = F.relu(char_emb)
+            char_emb = torch.transpose(char_emb, 1, 2)
+            # apply maxpool 1d on the last dimension, kernel_size = max num of char per word
+            char_emb, _ = torch.max(char_emb, dim=3)
+            # want char_emb to be (batch_size, seq_len, hidden_size)
+            emb = torch.cat([word_emb, char_emb], dim=-1)
+        else:
+            emb = word_emb
+
+    
+        emb = self.proj(emb)  # (batch_size, seq_len, hidden_size)
+        emb = self.hwy(emb)   # (batch_size, seq_len, hidden_size)
+        return emb
+
+
 
 class HighwayEncoder(nn.Module):
     """Encode an input sequence using a highway network.
@@ -144,7 +205,6 @@ class BiDAFAttention(nn.Module):
         batch_size, c_len, _ = c.size()
         q_len = q.size(1)
         s = self.get_similarity_matrix(c, q)        # (batch_size, c_len, q_len)
-        print("Similarity matrix size", s.size(), q_mask.size(), c_mask.size())
         c_mask = c_mask.view(batch_size, c_len, 1)  # (batch_size, c_len, 1)
         q_mask = q_mask.view(batch_size, 1, q_len)  # (batch_size, 1, q_len)
         s1 = masked_softmax(s, q_mask, dim=2)       # (batch_size, c_len, q_len)
@@ -271,7 +331,7 @@ class CoAttention(nn.Module):
         return L 
 
 class SelfAttention(nn.Module):
-    """Self attention as described in the paper: https://www.microsoft.com/en-us/research/wp-content/uploads/2017/05/r-net.pdf
+    """Self attention, or self-matching attention, as described in the paper: https://www.microsoft.com/en-us/research/wp-content/uploads/2017/05/r-net.pdf
     Args:
         hidden_size (int): Size of hidden activations.
         drop_prob (float): Probability of zero-ing out activations.
@@ -292,20 +352,30 @@ class SelfAttention(nn.Module):
         self.tanh = nn.Tanh()
         self.softmax = nn.Softmax()
         self.g = nn.Sequential(nn.Linear(2*self.input_dim, 2*self.input_dim, bias=False), nn.Sigmoid()) # do we need sigmoid here??
-        self.rnn = nn.GRU(input_dim , self.hidden_size/2, bidirectional=True, layers=self.layers, dropout=self.drop_prob) # can we expand the size of th emodel in any way? 
+        self.rnn = nn.GRU(input_dim*2, self.hidden_size, bidirectional=True, num_layers=3, dropout=self.drop_prob) # can we expand the size of th emodel in any way? 
 
-    def forward(self, p, prev_att):
+    def forward(self, prev_att):
         
-        prev_att = prev_att.copy()
+        p = prev_att
+        # a little bit of dropout before this attention layer; finding higher performance without extra dropout
+        # p = F.dropout(p, self.drop_prob, self.training)
+        
 
         #use W1
-        W1 = self.W1(p)
-        W2 = self.W2(p)
+        W1 = self.W1(p).repeat(p.size(0), 1, 1, 1)
+        W2 = self.W2(p).repeat(p.size(0), 1, 1, 1)
+        p_long = p.repeat(p.size(0), 1, 1, 1)
         s = self.tanh(W1 + W2)
         s = self.V(s)
-        a = self.Softmax(s)
+        a = self.softmax(s)
+
+        #get c by first combining a and p, then applying self-gating
+        c = (a * p_long)
+        c = torch.sum(c, dim=0)
+        c = torch.cat((p, c), dim=2)
+        c = torch.mul(c, self.g(c))
         # c: get sum
-        output, _ = self.rnn(a)
+        output, _ = self.rnn(c)
         return F.dropout(output, self.drop_prob, self.training)
 
 
