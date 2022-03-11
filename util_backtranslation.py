@@ -369,7 +369,7 @@ def back_translation(data_path, output_path):
         context_char_idxs = torch.cat((context_char_idxs, torch.unsqueeze(add_new_context_chars_idxs, dim=0)), 0)
 
         add_new_question_idxs = convert_to_indices(trans_question_string, word2idx, question_idxs[idx])       
-        add_new_question_char_idxs = convert_to_char_indices(trans_question_string, new_question_char_idxs, char2idx)
+        add_new_question_char_idxs = convert_to_char_indices(trans_question_string, new_question_char_idxs, char2idx, word2idx)
         
         if np.random.binomial(1, 0.5, 1)[0]: # flip a coin
             add_new_question_idxs = new_question_idxs
