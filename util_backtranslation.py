@@ -21,7 +21,6 @@ from collections import Counter
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
 
 
-
 class SQuAD(data.Dataset):
     """Stanford Question Answering Dataset (SQuAD).
 
@@ -185,23 +184,41 @@ def convert_to_string(indices, dictionary):
     return " ".join(words)
 
 # for strings with words
-def convert_to_indices(string, dictionary):
-    #string = string.split()
-    string = re.split(stringutils.punctuation, string)
-    return torch.tensor([dictionary[elem] for elem in string if elem != ""])
+def convert_to_indices(string, dictionary, orig_word_idxs):
+    print(string)
+    string = re.sub(r'[^\w\s]', '', string)
+    string = string.split()
+    idxs = []
+    for elem in string:
+        if elem in dictionary:
+            idxs.append(dictionary[elem])
+    for i in range(len(idxs), len(orig_word_idxs)):
+        idxs.append(0)
+    return torch.tensor(idxs)
 
 # for getting the character indices
-def convert_to_char_indices(string, orig_char_idxs, dictionary):
-    #string = string.split()
-    string = re.split(stringutils.punctuation, string)
-    chars = [list(word) if (word != "--NULL--" or "") else [] for word in string]
+def convert_to_char_indices(string, orig_char_idxs, dictionary, word_dictionary):
+    string = re.sub(r'[^\w\s]', '', string)
+    string = string.split()
+    # chars = [list(word) if (word != "--NULL--" or "" or " ") else [] for word in string]
+    chars = []
+    nonsense_words = 0
+    for word in string:
+        if word in word_dictionary and (word != "--NULL--"):
+            chars.append(list(word))
+        else:
+            nonsense_words += 1
+    for i in range(nonsense_words):
+        chars.append([])
     new_char_idxs = orig_char_idxs.clone().detach()
+    print(len(chars), new_char_idxs.shape)
     for i in range(len(chars)):
         word = chars[i]
         for j in range(len(word)):
             char = word[j]
             new_char_idxs[i][j] = dictionary[char]
         for j in range(len(word), new_char_idxs.shape[1]):
+            # print(i, j)
             new_char_idxs[i][j] = 0
     return torch.tensor(new_char_idxs)
 
@@ -341,8 +358,8 @@ def back_translation(data_path, output_path):
         
         # apply the unsqueeze to properly concatenate the things
         # randomly choose original or translated context queries
-        add_new_context_idxs = convert_to_indices(trans_context_string, word2idx)
-        add_new_context_chars_idxs = convert_to_char_indices(trans_context_string, new_context_chars_idxs, char2idx)
+        add_new_context_idxs = convert_to_indices(trans_context_string, word2idx, context_idxs[idx]) # must figure this one out
+        add_new_context_chars_idxs = convert_to_char_indices(trans_context_string, new_context_chars_idxs, char2idx, word2idx)
 
         use_orig_context = np.random.binomial(1, 0.5, 1)[0]
         if use_orig_context: # flip a coin
@@ -351,7 +368,7 @@ def back_translation(data_path, output_path):
         context_idxs = torch.cat((context_idxs, torch.unsqueeze(add_new_context_idxs, dim=0)), 0)
         context_char_idxs = torch.cat((context_char_idxs, torch.unsqueeze(add_new_context_chars_idxs, dim=0)), 0)
 
-        add_new_question_idxs = convert_to_indices(trans_question_string, word2idx)       
+        add_new_question_idxs = convert_to_indices(trans_question_string, word2idx, question_idxs[idx])       
         add_new_question_char_idxs = convert_to_char_indices(trans_question_string, new_question_char_idxs, char2idx)
         
         if np.random.binomial(1, 0.5, 1)[0]: # flip a coin
