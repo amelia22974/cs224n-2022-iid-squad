@@ -268,8 +268,8 @@ def find_best_answer(start_candidates, end_candidates, trans_context_words, orig
                     best_answer = [start_idx, end_idx]
                     best_answer_score = score
     if best_answer_score < 0.25:
-        return [-1, -1]
-    return best_answer
+        return torch.tensor([-1, -1])
+    return torch.tensor(best_answer)
 
 def back_translation(data_path, output_path):
     """Stanford Question Answering Dataset (SQuAD).
