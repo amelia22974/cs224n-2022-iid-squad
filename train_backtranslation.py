@@ -81,11 +81,15 @@ def main(args):
     if args.span_corrupt:
         # the one with span corruption
         if not Path(args.train_span_corrupt_record_file).is_file():
+            print("Span corruption training data does not exist. Building data and storing in file.")
             span_corrupt(args.train_record_file, args.train_span_corrupt_record_file)
+        print("Span corruption training data already exists. Reading from span corruption data file.")
         train_dataset = SQuAD(args.train_span_corrupt_record_file, args.use_squad_v2)
     elif args.back_translation:
         if not Path(args.train_back_translation_record_file).is_file():
+            print("Back translation training data does not exist. Building data and storing in file.")
             back_translation(args.train_record_file, args.train_back_translation_record_file)
+        print("Back translation training data already exists. Reading from span corruption data file.")
         train_dataset = SQuAD(args.train_back_translation_record_file, args.use_squad_v2)
     train_loader = data.DataLoader(train_dataset,
                                    batch_size=args.batch_size,

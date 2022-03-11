@@ -109,7 +109,8 @@ def span_corrupt(data_path, output_path):
         data_path (str): Path to .npz file containing pre-processed dataset.
         use_v2 (bool): Whether to use SQuAD 2.0 questions. Otherwise only use SQuAD 1.1.
     """
-    
+    print("Starting to create the span corruption dataset.")
+
     dataset = np.load(data_path)
     context_idxs = torch.from_numpy(dataset['context_idxs']).long()
     context_char_idxs = torch.from_numpy(dataset['context_char_idxs']).long()
@@ -121,6 +122,8 @@ def span_corrupt(data_path, output_path):
     ids = torch.from_numpy(dataset['ids']).long()
     last_id = ids[-1].item()
     for idx in range(len(ids)): 
+        if idx % 1000 == 0:
+            print("Processed " + str(idx) + " training entries.")
         new_y1 = y1s[idx]
         new_y2 = y2s[idx]
 
@@ -168,6 +171,7 @@ def span_corrupt(data_path, output_path):
         ids = torch.cat((ids, torch.unsqueeze(add_id, dim=0)), 0) 
     
     # save into a new file
+    print("Finished processing all training examples. Saving into file.")
     np.savez_compressed(output_path, 
                         context_idxs=context_idxs, 
                         context_char_idxs=context_char_idxs, 
@@ -176,6 +180,7 @@ def span_corrupt(data_path, output_path):
                         y1s=y1s, 
                         y2s=y2s, 
                         ids=ids)
+    print("Finished saving data into file.")
 
 
 def convert_to_string(indices, dictionary):
@@ -290,6 +295,8 @@ def back_translation(data_path, output_path):
         data_path (str): Path to .npz file containing pre-processed dataset.
         use_v2 (bool): Whether to use SQuAD 2.0 questions. Otherwise only use SQuAD 1.1.
     """
+
+    print("Starting to create the backtranslation dataset.")
     
     dataset = np.load(data_path)
     context_idxs = torch.from_numpy(dataset['context_idxs']).long()
@@ -315,6 +322,8 @@ def back_translation(data_path, output_path):
     idx2char = dict((v,k) for k,v in char2idx.items())
 
     for idx in range(len(ids)): 
+        if idx % 1000 == 0:
+            print("Processed " + str(idx) + " training entries.")
         new_y1 = y1s[idx]
         new_y2 = y2s[idx]
 
@@ -385,6 +394,7 @@ def back_translation(data_path, output_path):
         ids = torch.cat((ids, torch.unsqueeze(add_id, dim=0)), 0) 
     
     # save into a new file
+    print("Finished processing all training examples. Saving into file.")
     np.savez_compressed(output_path, 
                         context_idxs=context_idxs, 
                         context_char_idxs=context_char_idxs, 
@@ -393,6 +403,8 @@ def back_translation(data_path, output_path):
                         y1s=y1s, 
                         y2s=y2s, 
                         ids=ids)
+
+    print("Finished saving data into file.")
 
 
 def collate_fn(examples):
