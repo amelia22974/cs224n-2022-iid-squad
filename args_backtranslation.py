@@ -238,7 +238,7 @@ def add_train_test_args(parser):
                         help='Base directory for saving information.')
     parser.add_argument('--batch_size',
                         type=int,
-                        default=64,
+                        default=4,
                         help='Batch size per GPU. Scales automatically when \
                               multiple GPUs are available.')
     parser.add_argument('--use_squad_v2',
@@ -257,4 +257,4 @@ def add_train_test_args(parser):
                         type=str,
                         default=None,
                         help='Path to load as a model checkpoint.')
-    parser.add_argument('--self_attention', type=str, default=None, help="Write --self-attention Yes to get self-attention.")
+    parser.add_argument('--self_attention', type=str, default=None, help="Write --self-attention Yes or some other phrase to get self-attention.")

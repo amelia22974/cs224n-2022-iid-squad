@@ -113,6 +113,7 @@ def main(args):
                 # Forward
                 log_p1, log_p2 = model(cw_idxs, cc_idxs, qw_idxs, qc_idxs)
                 y1, y2 = y1.to(device), y2.to(device)
+                print("type of output y1, y2", type(y1), type(y2), y1.size(), y2.size())
                 loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
                 loss_val = loss.item()
 

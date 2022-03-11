@@ -235,7 +235,7 @@ class BiDAFCombined(nn.Module):
         
         # Add self attention as well as BIDAF attention
         
-        self.att = layers.SelfAttention(input_dim=8 * hidden_size,
+        self.att2 = layers.SelfAttention(input_dim=8 * hidden_size,
                                         hidden_size=4 * hidden_size,
                                         drop_prob=drop_prob) # may want to choose to update these params
 
@@ -247,7 +247,7 @@ class BiDAFCombined(nn.Module):
         self.out = layers.BiDAFOutput(hidden_size=hidden_size,
                                       drop_prob=drop_prob)
 
-    def forward(self, cw_idxs, qw_idxs, cc_idxs, qc_idxs):
+    def forward(self, cw_idxs, cc_idxs, qw_idxs, qc_idxs):
         c_mask = torch.zeros_like(cw_idxs) != cw_idxs
         q_mask = torch.zeros_like(qw_idxs) != qw_idxs
         c_len, q_len = c_mask.sum(-1), q_mask.sum(-1)
@@ -261,11 +261,10 @@ class BiDAFCombined(nn.Module):
         
         c_enc = self.enc(c_emb, c_len)    # (batch_size, c_len, 2 * hidden_size)
         q_enc = self.enc(q_emb, q_len)    # (batch_size, q_len, 2 * hidden_size)
-
         att = self.att(c_enc, q_enc,
                        c_mask, q_mask)    # (batch_size, c_len, 8 * hidden_size)
-
-        mod = self.mod(att, c_len)        # (batch_size, c_len, 2 * hidden_size)
+        att2 = self.att2(att)
+        mod = self.mod(att2, c_len)        # (batch_size, c_len, 2 * hidden_size)
 
         out = self.out(att, mod, c_mask)  # 2 tensors, each (batch_size, c_len)
 

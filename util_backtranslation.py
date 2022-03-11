@@ -9,7 +9,7 @@ import os
 import queue
 import re
 import shutil
-import string
+import string as stringutils
 import torch
 import torch.nn.functional as F
 import torch.utils.data as data
@@ -186,13 +186,15 @@ def convert_to_string(indices, dictionary):
 
 # for strings with words
 def convert_to_indices(string, dictionary):
-    string = string.split()
-    return torch.tensor([dictionary[elem] for elem in string])
+    #string = string.split()
+    string = re.split(stringutils.punctuation, string)
+    return torch.tensor([dictionary[elem] for elem in string if elem != ""])
 
 # for getting the character indices
 def convert_to_char_indices(string, orig_char_idxs, dictionary):
-    string = string.split()
-    chars = [list(word) if word != "--NULL--" else [] for word in string]
+    #string = string.split()
+    string = re.split(stringutils.punctuation, string)
+    chars = [list(word) if (word != "--NULL--" or "") else [] for word in string]
     new_char_idxs = orig_char_idxs.clone().detach()
     for i in range(len(chars)):
         word = chars[i]
