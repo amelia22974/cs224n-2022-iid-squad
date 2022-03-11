@@ -185,7 +185,6 @@ def convert_to_string(indices, dictionary):
 
 # for strings with words
 def convert_to_indices(string, dictionary, orig_word_idxs):
-    print(string)
     string = re.sub(r'[^\w\s]', '', string)
     string = string.split()
     idxs = []
@@ -211,14 +210,12 @@ def convert_to_char_indices(string, orig_char_idxs, dictionary, word_dictionary)
     for i in range(nonsense_words):
         chars.append([])
     new_char_idxs = orig_char_idxs.clone().detach()
-    print(len(chars), new_char_idxs.shape)
     for i in range(len(chars)):
         word = chars[i]
         for j in range(len(word)):
             char = word[j]
             new_char_idxs[i][j] = dictionary[char]
         for j in range(len(word), new_char_idxs.shape[1]):
-            # print(i, j)
             new_char_idxs[i][j] = 0
     return torch.tensor(new_char_idxs)
 
