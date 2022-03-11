@@ -22,6 +22,8 @@ from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from ujson import load as json_load
 from util import collate_fn, SQuAD
+from util_backtranslation import span_corrupt
+from pathlib import Path
 
 
 def main(args):
@@ -54,7 +56,7 @@ def main(args):
                   hidden_size=args.hidden_size,
                   drop_prob=args.drop_prob,
                   char_drop_prob=char_drop_prob,
-                  use_char_emb=args.use_char_emb)
+                  use_char_emb=True) #confirm that we're actually using character embeddings
     model = nn.DataParallel(model, args.gpu_ids)
     if args.load_path:
         log.info(f'Loading checkpoint from {args.load_path}...')
@@ -80,6 +82,13 @@ def main(args):
     # Get data loader
     log.info('Building dataset...')
     train_dataset = SQuAD(args.train_record_file, args.use_squad_v2)
+    if args.span_corrupt:
+        # the one with span corruption
+        if not Path(args.train_span_corrupt_record_file).is_file():
+            print("Span corruption training data does not exist. Building data and storing in file.")
+            span_corrupt(args.train_record_file, args.train_span_corrupt_record_file)
+        print("Span corruption training data already exists. Reading from span corruption data file.")
+        train_dataset = SQuAD(args.train_span_corrupt_record_file, args.use_squad_v2)
     train_loader = data.DataLoader(train_dataset,
                                    batch_size=args.batch_size,
                                    shuffle=True,
@@ -113,7 +122,7 @@ def main(args):
                 # Forward
                 log_p1, log_p2 = model(cw_idxs, cc_idxs, qw_idxs, qc_idxs)
                 y1, y2 = y1.to(device), y2.to(device)
-                print("type of output y1, y2", type(y1), type(y2), y1.size(), y2.size())
+                
                 loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
                 loss_val = loss.item()
 

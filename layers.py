@@ -358,23 +358,23 @@ class SelfAttention(nn.Module):
         
         p = prev_att
         # a little bit of dropout before this attention layer; finding higher performance without extra dropout
-        # p = F.dropout(p, self.drop_prob, self.training)
-        
+        p = F.dropout(p, self.drop_prob, self.training)
 
         #use W1
         W1 = self.W1(p).repeat(p.size(0), 1, 1, 1)
         W2 = self.W2(p).repeat(p.size(0), 1, 1, 1)
         p_long = p.repeat(p.size(0), 1, 1, 1)
-        s = self.tanh(W1 + W2)
+        s = self.tanh(W1.permute([1, 0, 2, 3]) + W2)
         s = self.V(s)
-        a = self.softmax(s)
+        a = F.softmax(s, dim=0)
 
         #get c by first combining a and p, then applying self-gating
-        c = (a * p_long)
-        c = torch.sum(c, dim=0)
+        c = (a * p_long.permute([1, 0, 2, 3]))
+        c = c.sum(dim=0)
         c = torch.cat((p, c), dim=2)
         c = torch.mul(c, self.g(c))
-        # c: get sum
+        # now feed into our rnn
+        self.rnn.flatten_parameters()
         output, _ = self.rnn(c)
         return F.dropout(output, self.drop_prob, self.training)
 
