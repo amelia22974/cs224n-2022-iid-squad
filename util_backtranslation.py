@@ -147,14 +147,14 @@ def span_corrupt(data_path, output_path):
         end_prefix = ((trunc_len - masked_content_len) // 2) - 1
         prefix = trunc_doc[:end_prefix]
         masked_content = trunc_doc[end_prefix:end_prefix + masked_content_len]
-        masked_content = torch.tensor([0 for elem in masked_content]) # replace them with NULL tokens
+        masked_content = torch.tensor([1 for elem in masked_content]) # replace them with NULL tokens
         suffix = trunc_doc[end_prefix + masked_content_len:]
-        add_new_context_idxs = torch.cat((prefix, masked_content, suffix, context_idxs[idx][trunc_len:]), 0) 
+        add_new_context_idxs = torch.cat((prefix, masked_content, suffix, new_context_idxs[trunc_len:]), 0) 
 
         # handle self.context_char_idxs[idx]
         prefix_char = new_context_chars_idxs[:end_prefix] 
         masked_content_char = new_context_chars_idxs[end_prefix:end_prefix + masked_content_len]
-        masked_content_char = torch.tensor([[0] * masked_content_char.size()[1] for i in range(masked_content_char.size()[0])])
+        masked_content_char = torch.tensor([[1] * masked_content_char.size()[1] for i in range(masked_content_char.size()[0])])
         suffix_char = new_context_chars_idxs[end_prefix + masked_content_len:]
         add_new_context_chars_idxs = torch.cat((prefix_char, masked_content_char, suffix_char), 0)
 
@@ -191,15 +191,14 @@ def span_corrupt(data_path, output_path):
     # save into a new file
     print("Finished processing all training examples. Saving into file.")
     np.savez_compressed(output_path, 
-                        context_idxs=context_idxs.numpy(), 
-                        context_char_idxs=context_char_idxs.numpy(), 
-                        ques_idxs=question_idxs.numpy(), 
-                        ques_char_idxs=question_char_idxs.numpy(), 
-                        y1s=y1s.numpy(), 
-                        y2s=y2s.numpy(), 
-                        ids=ids.numpy())
+                        context_idxs=context_idxs, 
+                        context_char_idxs=context_char_idxs, 
+                        ques_idxs=question_idxs, 
+                        ques_char_idxs=question_char_idxs, 
+                        y1s=y1s, 
+                        y2s=y2s, 
+                        ids=ids)
     print("Finished saving data into file.")
-
 
 def convert_to_string(indices, dictionary):
     words = [dictionary[elem.item()] for elem in indices]
