@@ -21,7 +21,7 @@ import util
 from args import get_test_args
 from collections import OrderedDict
 from json import dumps
-#from models import BiDAF, BiDAFSelfAttended, BiDAFCoattended
+from models import BiDAF, BiDAFSelfAttended, BiDAFSelfAttendedOld, BiDAFCoattended, BiDAFCombined
 from models_charemb import BiDAFChar #import BiDAF with Character Embeddings
 from os.path import join
 from tensorboardX import SummaryWriter
@@ -29,71 +29,9 @@ from tqdm import tqdm
 from ujson import load as json_load
 from util import collate_fn, SQuAD, eval_dict_categorized
 
-
-# def main(args):
-#     # Set up logging
-#     # args.save_dir = util.get_save_dir(args.save_dir, args.name, training=False)
-#     # log = util.get_logger(args.save_dir, args.name)
-#     # log.info(f'Args: {dumps(vars(args), indent=4, sort_keys=True)}')
-#     # device, gpu_ids = util.get_available_devices()
-#     # args.batch_size *= max(1, len(gpu_ids))
-
-#     # # Get embeddings
-#     log.info('Loading embeddings...')
-#     word_vectors = util.torch_from_json(args.word_emb_file)
-
-#     # Get model
-#     log.info('Building model...')
-#     model = BiDAF(word_vectors=word_vectors,
-#                   hidden_size=args.hidden_size)
-#     model = nn.DataParallel(model, gpu_ids)
-#     log.info(f'Loading checkpoint from {args.load_path}...')
-#     model = util.load_model(model, args.load_path, gpu_ids, return_step=False)
-#     model = model.to(device)
-#     model.eval()
-
-#     # Get data loader
-#     log.info('Building dataset...')
-#     record_file = vars(args)[f'{args.split}_record_file']
-#     dataset = SQuAD(record_file, args.use_squad_v2)
-#     data_loader = data.DataLoader(dataset,
-#                                   batch_size=args.batch_size,
-#                                   shuffle=False,
-#                                   num_workers=args.num_workers,
-#                                   collate_fn=collate_fn)
-
-#     # Evaluate
-#     log.info(f'Evaluating on {args.split} split...')
-#     nll_meter = util.AverageMeter()
-#     pred_dict = {}  # Predictions for TensorBoard
-#     sub_dict = {}   # Predictions for submission
-#     eval_file = vars(args)[f'{args.split}_eval_file']
-#     category_dict = {}
-#     with open(eval_file, 'r') as fh:
-        
-#         gold_dict = json_load(fh)
-#         for k in gold_dict.keys():
-#             q = gold_dict[k]["question"]
-#             q = q.lower()
-#             category = 0
-#             if q.find("who") != -1:
-#                category = 1
-#             elif q.find("what") != -1:
-#                 category = 2
-#             elif q.find("where") != -1:
-#                 category = 3
-#             elif q.find("when") != -1:
-#                 category = 4
-#             elif q.find("why") != -1:
-#                 category = 5
-#             # categorize the sample
-
-#             category_dict[k] = category
-
-
-
 def main(args):
     # Set up logging
+    type = "baseline"
     args.save_dir = util.get_save_dir(args.save_dir, args.name, training=False)
     log = util.get_logger(args.save_dir, args.name)
     log.info(f'Args: {dumps(vars(args), indent=4, sort_keys=True)}')
@@ -101,39 +39,101 @@ def main(args):
     args.batch_size *= max(1, len(gpu_ids))
 
     # Get embeddings
-    #log.info('Loading embeddings...')
-    # word_vectors = util.torch_from_json(args.word_emb_file)
-
-    # Get model
-    # log.info('Building model...')
-    # model = BiDAF(word_vectors=word_vectors,
-    #               hidden_size=args.hidden_size)
-    # model = nn.DataParallel(model, gpu_ids)
-    # log.info(f'Loading checkpoint from {args.load_path}...')
-    # model = util.load_model(model, args.load_path, gpu_ids, return_step=False)
-    # model = model.to(device)
-    # model.eval()
-
-    # Get embeddings [CHARACTER EMBEDDINGS VERSION]
     log.info('Loading embeddings...')
-    hidden_size = 100
-    drop_prob = 0.2
-    use_char_emb = True
     word_vectors = util.torch_from_json(args.word_emb_file)
-    char_vectors = util.torch_from_json(args.char_emb_file)
 
-    # Get model
-    log.info('Building model...')
-    model = BiDAFChar(word_vectors=word_vectors,
-                char_vectors=char_vectors,
-                hidden_size=hidden_size,
-                use_char_emb=use_char_emb)
-    model = nn.DataParallel(model, gpu_ids)
-    log.info(f'Loading checkpoint from {args.load_path}...')
-    model = util.load_model(model, args.load_path, gpu_ids, return_step=False)
-    model = model.to(device)
-    model.eval()
+    # # Get model
+    if type == "baseline":
 
+        log.info('Building model...')
+        model = BiDAF(word_vectors=word_vectors,
+                       hidden_size=args.hidden_size)
+        model = nn.DataParallel(model, gpu_ids)
+        log.info(f'Loading checkpoint from {args.load_path}...')
+        model = util.load_model(model, args.load_path, gpu_ids, return_step=False)
+        model = model.to(device)
+        model.eval()
+    elif type == "selfmatchcombined":
+        # Get embeddings [CHARACTER EMBEDDINGS VERSION]
+        log.info('Loading embeddings...')
+        hidden_size = 100
+        #drop_prob = 0.2
+        use_char_emb = True
+        word_vectors = util.torch_from_json(args.word_emb_file)
+        char_vectors = util.torch_from_json(args.char_emb_file)
+        # Get model
+        log.info('Building model...')
+        #model = BiDAFCombined(word_vectors=word_vectors,
+        #            char_vectors=char_vectors,
+        #            hidden_size=hidden_size,
+        #            use_char_emb=use_char_emb)
+
+        model = BiDAFCombined(word_vectors=word_vectors,
+                    char_vectors=char_vectors,
+                    hidden_size=args.hidden_size,
+                    drop_prob=0,
+                    char_drop_prob=0,
+                    use_char_emb=True) #confirm that we're actually using character embeddings
+        model = nn.DataParallel(model, gpu_ids)
+        log.info(f'Loading checkpoint from {args.load_path}...')
+        model = util.load_model(model, args.load_path, gpu_ids, return_step=False)
+        model = model.to(device)
+        model.eval()
+    elif type == "selfmatchattention":
+        # Get embeddings [CHARACTER EMBEDDINGS VERSION]
+        log.info('Loading embeddings...')
+        hidden_size = 100
+        #drop_prob = 0.2
+        use_char_emb = True
+        word_vectors = util.torch_from_json(args.word_emb_file)
+        char_vectors = util.torch_from_json(args.char_emb_file)
+        # Get model
+        log.info('Building model...')
+        #model = BiDAFCombined(word_vectors=word_vectors,
+        #            char_vectors=char_vectors,
+        #            hidden_size=hidden_size,
+        #            use_char_emb=use_char_emb)
+
+        model = BiDAFSelfAttendedOld(word_vectors=word_vectors,
+                    char_vectors=char_vectors,
+                    hidden_size=args.hidden_size,
+                    drop_prob=0,
+                    char_drop_prob=0,
+                    use_char_emb=True) #confirm that we're actually using character embeddings
+        model = nn.DataParallel(model, gpu_ids)
+        log.info(f'Loading checkpoint from {args.load_path}...')
+        model = util.load_model(model, args.load_path, gpu_ids, return_step=False)
+        model = model.to(device)
+        model.eval()
+    elif type == "charembed":
+        # Get embeddings [CHARACTER EMBEDDINGS VERSION]
+        log.info('Loading embeddings...')
+        hidden_size = 100
+        drop_prob = 0.2
+        use_char_emb = True
+        word_vectors = util.torch_from_json(args.word_emb_file)
+        char_vectors = util.torch_from_json(args.char_emb_file)
+        # Get model
+        log.info('Building model...')
+        #model = BiDAFChar(word_vectors=word_vectors,
+        #            char_vectors=char_vectors,
+        #            hidden_size=hidden_size,
+        #            use_char_emb=use_char_emb)
+
+        model = BiDAFChar(word_vectors=word_vectors,
+                    char_vectors=char_vectors,
+                    hidden_size=args.hidden_size,
+                    drop_prob=0,
+                    char_drop_prob=0,
+                    use_char_emb=True) #confirm that we're actually using character embeddings
+        model = nn.DataParallel(model, gpu_ids)
+        log.info(f'Loading checkpoint from {args.load_path}...')
+        model = util.load_model(model, args.load_path, gpu_ids, return_step=False)
+        model = model.to(device)
+        model.eval()
+
+
+   
     # Get data loader
     log.info('Building dataset...')
     record_file = vars(args)[f'{args.split}_record_file']
@@ -181,7 +181,12 @@ def main(args):
             batch_size = cw_idxs.size(0)
 
             # Forward
-            log_p1, log_p2 = model(cw_idxs, qw_idxs)
+            if type == "selfmatchattention" or type == "selfmatchcombined":
+            
+            # for self matching combined
+                log_p1, log_p2 = model(cw_idxs, cc_idxs, qw_idxs, qc_idxs)
+            else:
+                log_p1, log_p2 = model(cw_idxs, qw_idxs)
             y1, y2 = y1.to(device), y2.to(device)
             loss = F.nll_loss(log_p1, y1) + F.nll_loss(log_p2, y2)
             nll_meter.update(loss.item(), batch_size)
@@ -213,32 +218,6 @@ def main(args):
             results_list = [[('NLL', nll_meter.avg), ('F1', results[i]['f1']),('EM', results[i]['em'])] for i in range(5)]
 
         print(results_list)
-        #results = OrderedDict(results_list)
-
-        # Log to console
-        #results_str = ', '.join(f'{k}: {v:05.2f}' for k, v in results.items())
-        #log.info(f'{args.split.title()} {results_str}')
-
-        # Log to TensorBoard
-        #tbx = SummaryWriter(args.save_dir)
-        #util.visualize(tbx,
-        #               pred_dict=pred_dict,
-        #               eval_path=eval_file,
-        #               step=0,
-        #               split=args.split,
-        #               num_visuals=args.num_visuals)
-
-    # Write submission file
-    #sub_path = join(args.save_dir, args.split + '_' + args.sub_file)
-    #log.info(f'Writing submission file to {sub_path}...')
-    #with open(sub_path, 'w', newline='', encoding='utf-8') as csv_fh:
-    #    csv_writer = csv.writer(csv_fh, delimiter=',')
-    #    csv_writer.writerow(['Id', 'Predicted'])
-    #    for uuid in sorted(sub_dict):
-    #        csv_writer.writerow([uuid, sub_dict[uuid]])
-
-
-
 
 
 
