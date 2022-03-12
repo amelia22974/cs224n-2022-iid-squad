@@ -5,6 +5,7 @@ Author:
 """
 from ast import Index
 import logging
+from math import e
 import os
 import queue
 import re
@@ -931,3 +932,34 @@ def compute_f1(a_gold, a_pred):
     recall = 1.0 * num_same / len(gold_toks)
     f1 = (2 * precision * recall) / (precision + recall)
     return f1
+
+def eval_dict_categorized(gold_dict, pred_dict, no_answer, category_dict):
+    """
+    Categorize data into different categories based on the type of question that was asked
+    """
+    eval_dict = [{"avna": 0, "f1":0, "em":0, "avna": 0, "total":0} for i in range(6)]
+    for key, value in pred_dict.items():
+        
+        ground_truths = gold_dict[key]['answers']
+        category = category_dict[key]
+        prediction = value
+        
+        eval_dict[category]["total"] += 1
+        eval_dict[category]["em"] += metric_max_over_ground_truths(compute_em, prediction, ground_truths)
+        eval_dict[category]["f1"] += metric_max_over_ground_truths(compute_f1, prediction, ground_truths)
+        if no_answer:
+            eval_dict[category]["avna"] += compute_avna(prediction, ground_truths)
+    
+    for val in range(6):
+        total = eval_dict[val]["total"]
+        f1 = eval_dict[val]["f1"]
+        em = eval_dict[val]["em"]
+        
+        if  total > 0:
+            eval_dict[val]["em"] = 100. * em/ total 
+            eval_dict[val]["f1"] = 100. * f1/ total 
+            if no_answer:
+                avna = eval_dict[val]["avna"]
+                eval_dict[val]["avna"] = 100. * avna / total
+
+    return eval_dict

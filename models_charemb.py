@@ -5,12 +5,12 @@ Author:
 """
 
 from tkinter import N
-import layers
+import layers_charemb as layers
 import torch
 import torch.nn as nn
 
 
-class BiDAF(nn.Module):
+class BiDAFChar(nn.Module):
     """Baseline BiDAF model for SQuAD.
 
     Based on the paper:
@@ -31,7 +31,8 @@ class BiDAF(nn.Module):
         drop_prob (float): Dropout probability.
     """
     def __init__(self, word_vectors, char_vectors, hidden_size, drop_prob=0., char_drop_prob = 0., use_char_emb=True):
-        super(BiDAF, self).__init__()
+        super(BiDAFChar, self).__init__()
+        print("Initializing char embedding version of BiDAF")
         self.use_char_emb = use_char_emb
         self.char_drop_prob = char_drop_prob
 
