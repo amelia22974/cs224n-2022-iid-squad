@@ -26,28 +26,8 @@ from os.path import join
 from tensorboardX import SummaryWriter
 from tqdm import tqdm
 from ujson import load as json_load
-from util import collate_fn, SQuAD
+from util import collate_fn, SQuAD, eval_dict_categorized
 
-def eval_dict_categorized(gold_dict, pred_dict, no_answer, category_dict):
-    avna = f1 = em = total = 0
-    eval_dict = {{"avna": 0, "f1":0, "em":0, "total":0} for i in range(5)]}
-    for key, value in pred_dict.items():
-        total += 1
-        ground_truths = gold_dict[key]['answers']
-        category = gold_dict[key]
-        prediction = value
-        eval_dict[category]["em"] += metric_max_over_ground_truths(compute_em, prediction, ground_truths)
-        eval_dict[category]["f1"] += metric_max_over_ground_truths(compute_f1, prediction, ground_truths)
-        if no_answer:
-            avna += compute_avna(prediction, ground_truths)
-    
-    for val in range(5):
-        eval_dict[val]['EM'] = 100. * em/ total
-        eval_dict[val]['F1'] = 100. * f1/ total
-        if no_answer:
-            eval_dict[val]['AvNA'] = 100. * avna / total
-
-    return eval_dict
 
 def main(args):
     # Set up logging
@@ -87,8 +67,9 @@ def main(args):
     pred_dict = {}  # Predictions for TensorBoard
     sub_dict = {}   # Predictions for submission
     eval_file = vars(args)[f'{args.split}_eval_file']
-    
+    category_dict = {}
     with open(eval_file, 'r') as fh:
+        
         gold_dict = json_load(fh)
         for k in gold_dict.keys():
             q = gold_dict[k]["question"]
@@ -170,8 +151,6 @@ def main(args):
 
             category_dict[k] = category
 
-
-
     with torch.no_grad(), \
             tqdm(total=len(dataset)) as progress_bar:
         for cw_idxs, cc_idxs, qw_idxs, qc_idxs, y1, y2, ids in data_loader:
@@ -206,33 +185,36 @@ def main(args):
 
     # Log results (except for test set, since it does not come with labels)
     if args.split != 'test':
-        results = util.eval_dicts_categorized(gold_dict, pred_dict, args.use_squad_v2, category_dict)
-        results_list = [('NLL', nll_meter.avg), ('F1', results[i]['F1']),('EM', results[i]['EM']) for i in range(5)]
+        results = util.eval_dict_categorized(gold_dict, pred_dict, args.use_squad_v2, category_dict)
         if args.use_squad_v2:
-            results_list.append(('AvNA', results['AvNA']))
-        results = OrderedDict(results_list)
+            results_list = [[('NLL', nll_meter.avg), ('F1', results[i]['f1']),('EM', results[i]['em']),('avna', results[i]["avna"])] for i in range(5)]
+        else:
+            results_list = [[('NLL', nll_meter.avg), ('F1', results[i]['f1']),('EM', results[i]['em'])] for i in range(5)]
+
+        print(results_list)
+        #results = OrderedDict(results_list)
 
         # Log to console
-        results_str = ', '.join(f'{k}: {v:05.2f}' for k, v in results.items())
-        log.info(f'{args.split.title()} {results_str}')
+        #results_str = ', '.join(f'{k}: {v:05.2f}' for k, v in results.items())
+        #log.info(f'{args.split.title()} {results_str}')
 
         # Log to TensorBoard
-        tbx = SummaryWriter(args.save_dir)
-        util.visualize(tbx,
-                       pred_dict=pred_dict,
-                       eval_path=eval_file,
-                       step=0,
-                       split=args.split,
-                       num_visuals=args.num_visuals)
+        #tbx = SummaryWriter(args.save_dir)
+        #util.visualize(tbx,
+        #               pred_dict=pred_dict,
+        #               eval_path=eval_file,
+        #               step=0,
+        #               split=args.split,
+        #               num_visuals=args.num_visuals)
 
     # Write submission file
-    sub_path = join(args.save_dir, args.split + '_' + args.sub_file)
-    log.info(f'Writing submission file to {sub_path}...')
-    with open(sub_path, 'w', newline='', encoding='utf-8') as csv_fh:
-        csv_writer = csv.writer(csv_fh, delimiter=',')
-        csv_writer.writerow(['Id', 'Predicted'])
-        for uuid in sorted(sub_dict):
-            csv_writer.writerow([uuid, sub_dict[uuid]])
+    #sub_path = join(args.save_dir, args.split + '_' + args.sub_file)
+    #log.info(f'Writing submission file to {sub_path}...')
+    #with open(sub_path, 'w', newline='', encoding='utf-8') as csv_fh:
+    #    csv_writer = csv.writer(csv_fh, delimiter=',')
+    #    csv_writer.writerow(['Id', 'Predicted'])
+    #    for uuid in sorted(sub_dict):
+    #        csv_writer.writerow([uuid, sub_dict[uuid]])
 
 
 

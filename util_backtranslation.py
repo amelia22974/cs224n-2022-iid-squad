@@ -167,13 +167,13 @@ def span_corrupt(data_path, output_path):
         if idx % 1000 == 0:
             print("Adding tensors")
         # apply the unsqueeze to properly concatenate the things
-        add_context_idxs.extend(add_new_context_idxs.tolist())
-        add_context_chars_idxs.extend(add_new_context_chars_idxs.tolist())
-        add_question_idxs.extend(question_idxs[idx].tolist())
-        add_question_chars_idxs.extend(question_char_idxs[idx].tolist())
-        add_y1s.extend(new_y1.tolist())
-        add_y2s.extend(new_y2.tolist())
-        add_ids.extend(ids[idx].item() + last_id)
+        add_context_idxs.append(add_new_context_idxs.tolist())
+        add_context_chars_idxs.append(add_new_context_chars_idxs.tolist())
+        add_question_idxs.append(question_idxs[idx].tolist())
+        add_question_chars_idxs.append(question_char_idxs[idx].tolist())
+        add_y1s.append(new_y1.tolist())
+        add_y2s.append(new_y2.tolist())
+        add_ids.append(ids[idx].item() + last_id)
         
     print("finished creating all tensors")
 
@@ -187,7 +187,6 @@ def span_corrupt(data_path, output_path):
     y2s = torch.cat((y2s, torch.tensor(add_y2s)), 0)
 
     ids = torch.cat((ids, torch.tensor(add_ids)), 0)  
-
     # save into a new file
     print("Finished processing all training examples. Saving into file.")
     np.savez_compressed(output_path, 
