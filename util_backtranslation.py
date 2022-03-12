@@ -19,7 +19,8 @@ import ujson as json
 import random
 from collections import Counter
 from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
-
+from joblib import Parallel, delayed
+import multiprocessing
 
 class SQuAD(data.Dataset):
     """Stanford Question Answering Dataset (SQuAD).
@@ -121,9 +122,18 @@ def span_corrupt(data_path, output_path):
 
     ids = torch.from_numpy(dataset['ids']).long()
     last_id = ids[-1].item()
+
+    add_context_idxs = []
+    add_context_chars_idxs = []
+    add_question_idxs = []
+    add_question_chars_idxs = []
+    add_y1s = []
+    add_y2s = []
+    add_ids = []
+
     for idx in range(len(ids)): 
         if idx % 1000 == 0:
-            print("Processed " + str(idx) + " training entries.")
+            print("Processing " + str(idx) + "th training entry.")
         new_y1 = y1s[idx]
         new_y2 = y2s[idx]
 
@@ -146,7 +156,7 @@ def span_corrupt(data_path, output_path):
         masked_content_char = new_context_chars_idxs[end_prefix:end_prefix + masked_content_len]
         masked_content_char = torch.tensor([[0] * masked_content_char.size()[1] for i in range(masked_content_char.size()[0])])
         suffix_char = new_context_chars_idxs[end_prefix + masked_content_len:]
-        add_new_context_chars_idxs = torch.cat((prefix_char, masked_content_char, suffix_char), 0) 
+        add_new_context_chars_idxs = torch.cat((prefix_char, masked_content_char, suffix_char), 0)
 
         # If the original answer is not preserved, then make sure that there is no answer.  
         # Corrupting only part of the answer means that it won't always be a valid answer. 
@@ -154,22 +164,30 @@ def span_corrupt(data_path, output_path):
             or new_context_idxs[y2s[idx].item()] != add_new_context_idxs[y2s[idx].item()]:
             new_y1, new_y2 = torch.tensor(-1), torch.tensor(-1)
 
+        if idx % 1000 == 0:
+            print("Adding tensors")
         # apply the unsqueeze to properly concatenate the things
-        add_new_context_idxs = torch.unsqueeze(add_new_context_idxs, dim=0)
-        context_idxs = torch.cat((context_idxs, add_new_context_idxs), 0)
+        add_context_idxs.append(add_new_context_idxs.tolist())
+        add_context_chars_idxs.append(add_new_context_chars_idxs.tolist())
+        add_question_idxs.append(question_idxs[idx].tolist())
+        add_question_chars_idxs.append(question_char_idxs[idx].tolist())
+        add_y1s.append(new_y1.tolist())
+        add_y2s.append(new_y2.tolist())
+        add_ids.append(ids[idx].item() + last_id)
+        
+    print("finished creating all tensors")
 
-        add_new_context_chars_idxs = torch.unsqueeze(add_new_context_chars_idxs, dim=0)
-        context_char_idxs = torch.cat((context_char_idxs, add_new_context_chars_idxs), 0)
+    context_idxs = torch.cat((context_idxs, torch.tensor(add_context_idxs)), 0)
+    context_char_idxs = torch.cat((context_char_idxs, torch.tensor(add_context_chars_idxs)), 0)
 
-        question_idxs = torch.cat((question_idxs, torch.unsqueeze(question_idxs[idx], dim=0)), 0)
-        question_char_idxs = torch.cat((question_char_idxs, torch.unsqueeze(question_char_idxs[idx], dim=0)), 0)  
+    question_idxs = torch.cat((question_idxs, torch.tensor(add_question_idxs)), 0)
+    question_char_idxs = torch.cat((question_char_idxs, torch.tensor(add_question_chars_idxs)), 0)  
 
-        y1s = torch.cat((y1s, torch.unsqueeze(new_y1, dim=0)), 0)
-        y2s = torch.cat((y2s, torch.unsqueeze(new_y2, dim=0)), 0)
+    y1s = torch.cat((y1s, torch.tensor(add_y1s)), 0)
+    y2s = torch.cat((y2s, torch.tensor(add_y2s)), 0)
 
-        add_id = torch.tensor(ids[-1].item() + last_id)
-        ids = torch.cat((ids, torch.unsqueeze(add_id, dim=0)), 0) 
-    
+    ids = torch.cat((ids, torch.tensor(add_ids)), 0)  
+
     # save into a new file
     print("Finished processing all training examples. Saving into file.")
     np.savez_compressed(output_path, 
@@ -224,6 +242,7 @@ def convert_to_char_indices(string, orig_char_idxs, dictionary, word_dictionary)
             new_char_idxs[i][j] = 0
     return torch.tensor(new_char_idxs)
 
+# increase batch size of translations
 def translate(input, model, tokenizer):
     batch = tokenizer([input], return_tensors="pt")
     gen = model.generate(**batch)
@@ -321,22 +340,32 @@ def back_translation(data_path, output_path):
     idx2word = dict((v,k) for k,v in word2idx.items())
     idx2char = dict((v,k) for k,v in char2idx.items())
 
-    for idx in range(len(ids)): 
-        if idx % 1000 == 0:
-            print("Processed " + str(idx) + " training entries.")
-        new_y1 = y1s[idx]
-        new_y2 = y2s[idx]
+    add_context_idxs = []
+    add_context_chars_idxs = []
+    add_question_idxs = []
+    add_question_chars_idxs = []
+    add_y1s = []
+    add_y2s = []
+    add_ids = []
 
-        new_context_idxs = context_idxs[idx]
-        new_context_chars_idxs = context_char_idxs[idx]
+    batch_size = 20
+    for idx in range(0, len(ids), batch_size): 
+        print("Processed " + str(idx) + " training entries.")
+        new_y1 = y1s[idx:idx + batch_size]
+        new_y2 = y2s[idx:idx + batch_size]
 
-        new_question_idxs = question_idxs[idx]
-        new_question_char_idxs = question_char_idxs[idx]
+        new_context_idxs = context_idxs[idx:idx + batch_size]
+        new_context_chars_idxs = context_char_idxs[idx:idx + batch_size]
+
+        new_question_idxs = question_idxs[idx:idx + batch_size]
+        new_question_char_idxs = question_char_idxs[idx:idx + batch_size]
         
         # retrieve the sentences to use for translation
         context_string = convert_to_string(new_context_idxs, idx2word)
         question_string = convert_to_string(new_question_idxs, idx2word)
 
+        # consider translating only the question to speed up 
+        # consider word level substitution
         trans_context_string = translate(translate(context_string, en_de_model, en_de_tokenizer), de_en_model, de_en_tokenizer)
         trans_question_string = translate(translate(question_string, en_de_model, en_de_tokenizer), de_en_model, de_en_tokenizer)
 
@@ -380,19 +409,34 @@ def back_translation(data_path, output_path):
         if np.random.binomial(1, 0.5, 1)[0]: # flip a coin
             add_new_question_idxs = new_question_idxs
             add_new_question_char_idxs = new_question_char_idxs
-        question_idxs = torch.cat((question_idxs, torch.unsqueeze(add_new_question_idxs, dim=0)), 0)
-        question_char_idxs = torch.cat((question_char_idxs, torch.unsqueeze(add_new_question_char_idxs, dim=0)), 0)  
+        # question_idxs = torch.cat((question_idxs, torch.unsqueeze(add_new_question_idxs, dim=0)), 0)
+        # question_char_idxs = torch.cat((question_char_idxs, torch.unsqueeze(add_new_question_char_idxs, dim=0)), 0)  
 
         # fix it so that the y1s and y2s correspond to the correct context
         if use_orig_context:
             new_y1 = y1s[idx]
             new_y2 = y2s[idx]
-        y1s = torch.cat((y1s, torch.unsqueeze(new_y1, dim=0)), 0)
-        y2s = torch.cat((y2s, torch.unsqueeze(new_y2, dim=0)), 0)
 
-        add_id = torch.tensor(ids[-1].item() + last_id)
-        ids = torch.cat((ids, torch.unsqueeze(add_id, dim=0)), 0) 
-    
+        add_context_idxs.append(add_new_context_idxs.tolist())
+        add_context_chars_idxs.append(add_new_context_chars_idxs.tolist())
+        add_question_idxs.append(add_new_question_idxs.tolist())
+        add_question_chars_idxs.append(add_new_question_char_idxs.tolist())
+        add_y1s.append(new_y1.tolist())
+        add_y2s.append(new_y2.tolist())
+        add_ids.append(ids[idx].item() + last_id)
+        
+    print("finished creating all tensors")
+
+    context_idxs = torch.cat((context_idxs, torch.tensor(add_context_idxs)), 0)
+    context_char_idxs = torch.cat((context_char_idxs, torch.tensor(add_context_chars_idxs)), 0)
+
+    question_idxs = torch.cat((question_idxs, torch.tensor(add_question_idxs)), 0)
+    question_char_idxs = torch.cat((question_char_idxs, torch.tensor(add_question_chars_idxs)), 0)  
+
+    y1s = torch.cat((y1s, torch.tensor(add_y1s)), 0)
+    y2s = torch.cat((y2s, torch.tensor(add_y2s)), 0)
+
+    ids = torch.cat((ids, torch.tensor(add_ids)), 0)  
     # save into a new file
     print("Finished processing all training examples. Saving into file.")
     np.savez_compressed(output_path, 
