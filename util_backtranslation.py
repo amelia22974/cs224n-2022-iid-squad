@@ -167,13 +167,13 @@ def span_corrupt(data_path, output_path):
         if idx % 1000 == 0:
             print("Adding tensors")
         # apply the unsqueeze to properly concatenate the things
-        add_context_idxs.append(add_new_context_idxs.tolist())
-        add_context_chars_idxs.append(add_new_context_chars_idxs.tolist())
-        add_question_idxs.append(question_idxs[idx].tolist())
-        add_question_chars_idxs.append(question_char_idxs[idx].tolist())
-        add_y1s.append(new_y1.tolist())
-        add_y2s.append(new_y2.tolist())
-        add_ids.append(ids[idx].item() + last_id)
+        add_context_idxs.extend(add_new_context_idxs.tolist())
+        add_context_chars_idxs.extend(add_new_context_chars_idxs.tolist())
+        add_question_idxs.extend(question_idxs[idx].tolist())
+        add_question_chars_idxs.extend(question_char_idxs[idx].tolist())
+        add_y1s.extend(new_y1.tolist())
+        add_y2s.extend(new_y2.tolist())
+        add_ids.extend(ids[idx].item() + last_id)
         
     print("finished creating all tensors")
 
@@ -244,10 +244,10 @@ def convert_to_char_indices(string, orig_char_idxs, dictionary, word_dictionary)
 
 # increase batch size of translations
 def translate(input, model, tokenizer):
-    batch = tokenizer([input], return_tensors="pt")
+    batch = tokenizer(input, return_tensors="pt", padding=True)
     gen = model.generate(**batch)
     output = tokenizer.batch_decode(gen, skip_special_tokens=True)
-    return output[0]
+    return output
 
 def bigrams(string):
     bigrams_list = []
@@ -348,26 +348,31 @@ def back_translation(data_path, output_path):
     add_y2s = []
     add_ids = []
 
-    batch_size = 20
+    batch_size = 100
+    num_cores = multiprocessing.cpu_count()
+
     for idx in range(0, len(ids), batch_size): 
         print("Processed " + str(idx) + " training entries.")
-        new_y1 = y1s[idx:idx + batch_size]
-        new_y2 = y2s[idx:idx + batch_size]
+        new_y1s = y1s[idx:idx + batch_size]
+        new_y2s = y2s[idx:idx + batch_size]
 
-        new_context_idxs = context_idxs[idx:idx + batch_size]
-        new_context_chars_idxs = context_char_idxs[idx:idx + batch_size]
+        new_context_idxs_list = context_idxs[idx:idx + batch_size]
+        new_context_chars_idxs_list = context_char_idxs[idx:idx + batch_size]
 
-        new_question_idxs = question_idxs[idx:idx + batch_size]
-        new_question_char_idxs = question_char_idxs[idx:idx + batch_size]
+        new_question_idxs_list = question_idxs[idx:idx + batch_size]
+        new_question_char_idxs_list = question_char_idxs[idx:idx + batch_size]
         
         # retrieve the sentences to use for translation
-        context_string = convert_to_string(new_context_idxs, idx2word)
-        question_string = convert_to_string(new_question_idxs, idx2word)
+        # context_strings = Parallel(n_jobs=num_cores)(delayed(convert_to_string)(i, idx2word) for i in new_context_idxs_list) 
+        question_strings = Parallel(n_jobs=num_cores)(delayed(convert_to_string)(i, idx2word) for i in new_question_idxs_list)
+        
+        # convert_to_string(new_context_idxs, idx2word)
+        # question_string = convert_to_string(new_question_idxs, idx2word)
 
         # consider translating only the question to speed up 
         # consider word level substitution
-        trans_context_string = translate(translate(context_string, en_de_model, en_de_tokenizer), de_en_model, de_en_tokenizer)
-        trans_question_string = translate(translate(question_string, en_de_model, en_de_tokenizer), de_en_model, de_en_tokenizer)
+        # trans_context_strings_list = translate(translate(context_strings, en_de_model, en_de_tokenizer), de_en_model, de_en_tokenizer)
+        trans_question_strings_list = translate(translate(question_strings, en_de_model, en_de_tokenizer), de_en_model, de_en_tokenizer)
 
         # find the new answer
         # first, turn the start word of the answer and the end word of the answer into a 2gram by character level. 
@@ -375,55 +380,67 @@ def back_translation(data_path, output_path):
         # calculate the most likely candidates for start and end of the answer
         # calculate the  Jaccard similarity between the sets of character-level 2-grams
         # in the original answer token and new sentence token -> highest one is the new score
-        
-        context_words = context_string.split()
-        trans_context_words = trans_context_string.split()
+        for j in range(len(new_y1s)):
+            new_context_idxs = new_context_idxs_list[j]
+            new_context_chars_idxs = new_context_chars_idxs_list[j]
+            
+            new_question_idxs = new_question_idxs_list[j]
+            new_question_char_idxs = new_question_char_idxs_list[j]
 
-        answer_start_word = idx2word[new_context_idxs[new_y1.item()].item()]
-        answer_end_word = idx2word[new_context_idxs[new_y2.item()].item()]
+            new_y1 = new_y1s[j]
+            new_y2 = new_y2s[j]
 
-        answer_idxs = [elem for elem in range(new_y1.item(), new_y2.item() + 1)]
-        answer_idxs = [new_context_idxs[elem] for elem in answer_idxs]
-        answer_string = convert_to_string(answer_idxs, idx2word)
-       
-        start_candidates = find_most_similar(answer_start_word, trans_context_words, bigrams, jaccard_similarity)
-        end_candidates = find_most_similar(answer_end_word, trans_context_words, bigrams, jaccard_similarity)
-        
-        new_y1, new_y2 = find_best_answer(start_candidates, end_candidates, trans_context_words, answer_string.split())
-        
-        # apply the unsqueeze to properly concatenate the things
-        # randomly choose original or translated context queries
-        add_new_context_idxs = convert_to_indices(trans_context_string, word2idx, context_idxs[idx]) # must figure this one out
-        add_new_context_chars_idxs = convert_to_char_indices(trans_context_string, new_context_chars_idxs, char2idx, word2idx)
+            # trans_context_strings = trans_context_strings_list[j]
+            trans_question_strings = trans_question_strings_list[j]
+            # trans_context_words = trans_context_strings.split()
 
-        use_orig_context = np.random.binomial(1, 0.5, 1)[0]
-        if use_orig_context: # flip a coin
-            add_new_context_idxs = new_context_idxs
-            add_new_context_chars_idxs = new_context_chars_idxs
-        context_idxs = torch.cat((context_idxs, torch.unsqueeze(add_new_context_idxs, dim=0)), 0)
-        context_char_idxs = torch.cat((context_char_idxs, torch.unsqueeze(add_new_context_chars_idxs, dim=0)), 0)
+            # answer_start_word = idx2word[new_context_idxs[new_y1.item()].item()]
+            # answer_end_word = idx2word[new_context_idxs[new_y2.item()].item()]
 
-        add_new_question_idxs = convert_to_indices(trans_question_string, word2idx, question_idxs[idx])       
-        add_new_question_char_idxs = convert_to_char_indices(trans_question_string, new_question_char_idxs, char2idx, word2idx)
+            # answer_idxs = [elem for elem in range(new_y1.item(), new_y2.item() + 1)]
+            # answer_idxs = [new_context_idxs[elem] for elem in answer_idxs]
+            # answer_string = convert_to_string(answer_idxs, idx2word)
         
-        if np.random.binomial(1, 0.5, 1)[0]: # flip a coin
+            # start_candidates = find_most_similar(answer_start_word, trans_context_words, bigrams, jaccard_similarity)
+            # end_candidates = find_most_similar(answer_end_word, trans_context_words, bigrams, jaccard_similarity)
+            
+            # new_y1, new_y2 = find_best_answer(start_candidates, end_candidates, trans_context_words, answer_string.split())
+            
+            # apply the unsqueeze to properly concatenate the things
+            # randomly choose original or translated context queries
+            # add_new_context_idxs = convert_to_indices(trans_context_strings, word2idx, context_idxs[idx]) 
+            # add_new_context_chars_idxs = convert_to_char_indices(trans_context_strings, new_context_chars_idxs, char2idx, word2idx)
+
+            # use_orig_context = np.random.binomial(1, 0.5, 1)[0]
+            # if use_orig_context: # flip a coin
+            #     add_new_context_idxs = new_context_idxs
+            #     add_new_context_chars_idxs = new_context_chars_idxs
+            # context_idxs = torch.cat((context_idxs, torch.unsqueeze(add_new_context_idxs, dim=0)), 0)
+            # context_char_idxs = torch.cat((context_char_idxs, torch.unsqueeze(add_new_context_chars_idxs, dim=0)), 0)
+
+            add_new_question_idxs = convert_to_indices(trans_question_strings, word2idx, question_idxs[idx])       
+            add_new_question_char_idxs = convert_to_char_indices(trans_question_strings, new_question_char_idxs, char2idx, word2idx)
+            
+            
             add_new_question_idxs = new_question_idxs
             add_new_question_char_idxs = new_question_char_idxs
-        # question_idxs = torch.cat((question_idxs, torch.unsqueeze(add_new_question_idxs, dim=0)), 0)
-        # question_char_idxs = torch.cat((question_char_idxs, torch.unsqueeze(add_new_question_char_idxs, dim=0)), 0)  
+            # question_idxs = torch.cat((question_idxs, torch.unsqueeze(add_new_question_idxs, dim=0)), 0)
+            # question_char_idxs = torch.cat((question_char_idxs, torch.unsqueeze(add_new_question_char_idxs, dim=0)), 0)  
 
-        # fix it so that the y1s and y2s correspond to the correct context
-        if use_orig_context:
-            new_y1 = y1s[idx]
-            new_y2 = y2s[idx]
+            # fix it so that the y1s and y2s correspond to the correct context
+            # if use_orig_context:
+            #     new_y1 = y1s[idx]
+            #     new_y2 = y2s[idx]
 
-        add_context_idxs.append(add_new_context_idxs.tolist())
-        add_context_chars_idxs.append(add_new_context_chars_idxs.tolist())
-        add_question_idxs.append(add_new_question_idxs.tolist())
-        add_question_chars_idxs.append(add_new_question_char_idxs.tolist())
-        add_y1s.append(new_y1.tolist())
-        add_y2s.append(new_y2.tolist())
-        add_ids.append(ids[idx].item() + last_id)
+            add_context_idxs.append(new_context_idxs.tolist())
+            add_context_chars_idxs.append(new_context_chars_idxs.tolist())
+            add_question_idxs.append(add_new_question_idxs.tolist())
+            add_question_chars_idxs.append(add_new_question_char_idxs.tolist())
+            add_y1s.append(new_y1.tolist())
+            add_y2s.append(new_y2.tolist())
+            add_ids.append(ids[idx].item() + last_id)
+        print("finished batch")
+
         
     print("finished creating all tensors")
 
