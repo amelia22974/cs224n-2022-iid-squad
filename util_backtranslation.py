@@ -134,46 +134,47 @@ def span_corrupt(data_path, output_path):
     for idx in range(len(ids)): 
         if idx % 1000 == 0:
             print("Processing " + str(idx) + "th training entry.")
-        new_y1 = y1s[idx]
-        new_y2 = y2s[idx]
+        if np.random.binomial(1, 0.3, 1):
+            new_y1 = y1s[idx]
+            new_y2 = y2s[idx]
 
-        new_context_idxs = context_idxs[idx]
-        new_context_chars_idxs = context_char_idxs[idx]
+            new_context_idxs = context_idxs[idx]
+            new_context_chars_idxs = context_char_idxs[idx]
 
-        trunc_len = random.randint(4, int(len(new_context_idxs)*7/8))
-        trunc_doc = new_context_idxs[:trunc_len]
-        masked_content_len = int(trunc_len // 4) # we're always masking a quarter of the truncated content
+            trunc_len = random.randint(3, int(len(new_context_idxs)*0.3))
+            trunc_doc = new_context_idxs[:trunc_len]
+            masked_content_len = int(trunc_len // 4) # we're always masking a quarter of the truncated content
 
-        end_prefix = ((trunc_len - masked_content_len) // 2) - 1
-        prefix = trunc_doc[:end_prefix]
-        masked_content = trunc_doc[end_prefix:end_prefix + masked_content_len]
-        masked_content = torch.tensor([1 for elem in masked_content]) # replace them with NULL tokens
-        suffix = trunc_doc[end_prefix + masked_content_len:]
-        add_new_context_idxs = torch.cat((prefix, masked_content, suffix, new_context_idxs[trunc_len:]), 0) 
+            end_prefix = ((trunc_len - masked_content_len) // 2) - 1
+            prefix = trunc_doc[:end_prefix]
+            masked_content = trunc_doc[end_prefix:end_prefix + masked_content_len]
+            masked_content = torch.tensor([1 for elem in masked_content]) # replace them with OOV tokens
+            suffix = trunc_doc[end_prefix + masked_content_len:]
+            add_new_context_idxs = torch.cat((prefix, masked_content, suffix, new_context_idxs[trunc_len:]), 0) 
 
-        # handle self.context_char_idxs[idx]
-        prefix_char = new_context_chars_idxs[:end_prefix] 
-        masked_content_char = new_context_chars_idxs[end_prefix:end_prefix + masked_content_len]
-        masked_content_char = torch.tensor([[1] * masked_content_char.size()[1] for i in range(masked_content_char.size()[0])])
-        suffix_char = new_context_chars_idxs[end_prefix + masked_content_len:]
-        add_new_context_chars_idxs = torch.cat((prefix_char, masked_content_char, suffix_char), 0)
+            # handle self.context_char_idxs[idx]
+            prefix_char = new_context_chars_idxs[:end_prefix] 
+            masked_content_char = new_context_chars_idxs[end_prefix:end_prefix + masked_content_len]
+            masked_content_char = torch.tensor([[1] * masked_content_char.size()[1] for i in range(masked_content_char.size()[0])])
+            suffix_char = new_context_chars_idxs[end_prefix + masked_content_len:]
+            add_new_context_chars_idxs = torch.cat((prefix_char, masked_content_char, suffix_char), 0)
 
-        # If the original answer is not preserved, then make sure that there is no answer.  
-        # Corrupting only part of the answer means that it won't always be a valid answer. 
-        if new_context_idxs[y1s[idx].item()] != add_new_context_idxs[y1s[idx].item()] \
-            or new_context_idxs[y2s[idx].item()] != add_new_context_idxs[y2s[idx].item()]:
-            new_y1, new_y2 = torch.tensor(-1), torch.tensor(-1)
+            # If the original answer is not preserved, then make sure that there is no answer.  
+            # Corrupting only part of the answer means that it won't always be a valid answer. 
+            if new_context_idxs[y1s[idx].item()] != add_new_context_idxs[y1s[idx].item()] \
+                or new_context_idxs[y2s[idx].item()] != add_new_context_idxs[y2s[idx].item()]:
+                new_y1, new_y2 = torch.tensor(-1), torch.tensor(-1)
 
-        if idx % 1000 == 0:
-            print("Adding tensors")
-        # apply the unsqueeze to properly concatenate the things
-        add_context_idxs.append(add_new_context_idxs.tolist())
-        add_context_chars_idxs.append(add_new_context_chars_idxs.tolist())
-        add_question_idxs.append(question_idxs[idx].tolist())
-        add_question_chars_idxs.append(question_char_idxs[idx].tolist())
-        add_y1s.append(new_y1.tolist())
-        add_y2s.append(new_y2.tolist())
-        add_ids.append(ids[idx].item() + last_id)
+            if idx % 1000 == 0:
+                print("Adding tensors")
+            # apply the unsqueeze to properly concatenate the things
+            add_context_idxs.append(add_new_context_idxs.tolist())
+            add_context_chars_idxs.append(add_new_context_chars_idxs.tolist())
+            add_question_idxs.append(question_idxs[idx].tolist())
+            add_question_chars_idxs.append(question_char_idxs[idx].tolist())
+            add_y1s.append(new_y1.tolist())
+            add_y2s.append(new_y2.tolist())
+            add_ids.append(ids[idx].item() + last_id)
         
     print("finished creating all tensors")
 
@@ -238,7 +239,7 @@ def convert_to_char_indices(string, orig_char_idxs, dictionary, word_dictionary)
             new_char_idxs[i][j] = dictionary[char]
         for j in range(len(word), new_char_idxs.shape[1]):
             new_char_idxs[i][j] = 0
-    return torch.tensor(new_char_idxs)
+    return new_char_idxs
 
 # increase batch size of translations
 def translate(input, model, tokenizer):
@@ -352,6 +353,8 @@ def back_translation(data_path, output_path):
     # try to parallize the batches all at once. 
     for idx in range(0, len(ids), batch_size): 
         print("Processed " + str(idx) + " training entries.")
+        add_ids = [last_id + elem for elem in range(ids[idx].item(), ids[idx].item() + batch_size)]
+        
         new_y1s = y1s[idx:idx + batch_size]
         new_y2s = y2s[idx:idx + batch_size]
 
@@ -364,30 +367,33 @@ def back_translation(data_path, output_path):
         question_strings = Parallel(n_jobs=num_cores)(delayed(convert_to_string)(i, idx2word) for i in new_question_idxs_list)
         
         trans_question_strings_list = translate(translate(question_strings, en_de_model, en_de_tokenizer), de_en_model, de_en_tokenizer)
+        add_new_question_idxs = Parallel(n_jobs=num_cores)(delayed(convert_to_indices)(trans_question_strings_list[i], word2idx, new_question_idxs_list[i]) for i in range(len(trans_question_strings_list)))
+        add_new_question_char_idxs = Parallel(n_jobs=num_cores)(delayed(convert_to_char_indices)(trans_question_strings_list[i], new_question_char_idxs_list[i], char2idx, word2idx) for i in range(len(trans_question_strings_list)))
 
-        for j in range(len(new_y1s)):
-            new_context_idxs = new_context_idxs_list[j]
-            new_context_chars_idxs = new_context_chars_idxs_list[j]
+
+        # for j in range(len(new_y1s)):
+        #     new_context_idxs = new_context_idxs_list[j]
+        #     new_context_chars_idxs = new_context_chars_idxs_list[j]
             
-            new_question_idxs = new_question_idxs_list[j]
-            new_question_char_idxs = new_question_char_idxs_list[j]
+        #     new_question_idxs = new_question_idxs_list[j]
+        #     new_question_char_idxs = new_question_char_idxs_list[j]
 
-            new_y1 = new_y1s[j]
-            new_y2 = new_y2s[j]
+        #     new_y1 = new_y1s[j]
+        #     new_y2 = new_y2s[j]
 
-            trans_question_strings = trans_question_strings_list[j]
+        #     trans_question_strings = trans_question_strings_list[j]
 
-            add_new_question_idxs = convert_to_indices(trans_question_strings, word2idx, new_question_idxs)       
-            add_new_question_char_idxs = convert_to_char_indices(trans_question_strings, new_question_char_idxs, char2idx, word2idx)
+        #     add_new_question_idxs = convert_to_indices(trans_question_strings, word2idx, new_question_idxs)       
+        #     add_new_question_char_idxs = convert_to_char_indices(trans_question_strings, new_question_char_idxs, char2idx, word2idx)
             
 
-            add_context_idxs.append(new_context_idxs.tolist())
-            add_context_chars_idxs.append(new_context_chars_idxs.tolist())
-            add_question_idxs.append(add_new_question_idxs.tolist())
-            add_question_chars_idxs.append(add_new_question_char_idxs.tolist())
-            add_y1s.append(new_y1.tolist())
-            add_y2s.append(new_y2.tolist())
-            add_ids.append(ids[idx].item() + last_id)
+        add_context_idxs.extend(new_context_idxs_list)
+        add_context_chars_idxs.extend(new_context_chars_idxs_list)
+        add_question_idxs.extend(add_new_question_idxs)
+        add_question_chars_idxs.extend(add_new_question_char_idxs)
+        add_y1s.extend(new_y1s)
+        add_y2s.extend(new_y2s)
+        add_ids.extend(add_ids)
         print("finished batch")
 
         
@@ -406,13 +412,13 @@ def back_translation(data_path, output_path):
     # save into a new file
     print("Finished processing all training examples. Saving into file.")
     np.savez_compressed(output_path, 
-                        context_idxs=context_idxs.numpy(), 
-                        context_char_idxs=context_char_idxs.numpy(), 
-                        ques_idxs=question_idxs.numpy(), 
-                        ques_char_idxs=question_char_idxs.numpy(), 
-                        y1s=y1s.numpy(), 
-                        y2s=y2s.numpy(), 
-                        ids=ids.numpy())
+                        context_idxs=context_idxs, 
+                        context_char_idxs=context_char_idxs, 
+                        ques_idxs=question_idxs, 
+                        ques_char_idxs=question_char_idxs, 
+                        y1s=y1s, 
+                        y2s=y2s, 
+                        ids=ids)
 
     print("Finished saving data into file.")
 
