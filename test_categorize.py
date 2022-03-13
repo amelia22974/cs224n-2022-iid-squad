@@ -31,7 +31,7 @@ from util import collate_fn, SQuAD, eval_dict_categorized
 
 def main(args):
     # Set up logging
-    type = "selfmatchattention"
+    type = "charembed"
     args.save_dir = util.get_save_dir(args.save_dir, args.name, training=False)
     log = util.get_logger(args.save_dir, args.name)
     log.info(f'Args: {dumps(vars(args), indent=4, sort_keys=True)}')
@@ -210,7 +210,7 @@ def main(args):
     if args.split != 'test':
         results = util.eval_dict_categorized(gold_dict, pred_dict, args.use_squad_v2, category_dict)
         if args.use_squad_v2:
-            results_list = [[('NLL', nll_meter.avg), ('F1', results[i]['f1']),('EM', results[i]['em']),('avna', results[i]["avna"]), ('total', results[i]["total"])] for i in range(5)]
+            results_list = [[('NLL', nll_meter.avg), ('F1', results[i]['f1']),('EM', results[i]['em']),('avna', results[i]["avna"]), ('total', results[i]["total"])] for i in range(6)]
         else:
             results_list = [[('NLL', nll_meter.avg), ('F1', results[i]['f1']),('EM', results[i]['em'])] for i in range(5)]
 
