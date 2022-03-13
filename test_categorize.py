@@ -31,7 +31,7 @@ from util import collate_fn, SQuAD, eval_dict_categorized
 
 def main(args):
     # Set up logging
-    type = "charembed"
+    type = "selfmatchattention"
     args.save_dir = util.get_save_dir(args.save_dir, args.name, training=False)
     log = util.get_logger(args.save_dir, args.name)
     log.info(f'Args: {dumps(vars(args), indent=4, sort_keys=True)}')
@@ -86,7 +86,7 @@ def main(args):
         #drop_prob = 0.2
         use_char_emb = True
         word_vectors = util.torch_from_json(args.word_emb_file)
-        char_vectors = util.torch_from_json(args.char_emb_file)
+        #char_vectors = util.torch_from_json(args.char_emb_file)
         # Get model
         log.info('Building model...')
         #model = BiDAFCombined(word_vectors=word_vectors,
@@ -95,11 +95,8 @@ def main(args):
         #            use_char_emb=use_char_emb)
 
         model = BiDAFSelfAttendedOld(word_vectors=word_vectors,
-                    char_vectors=char_vectors,
                     hidden_size=args.hidden_size,
-                    drop_prob=0,
-                    char_drop_prob=0,
-                    use_char_emb=True) #confirm that we're actually using character embeddings
+                    drop_prob=0) #confirm that we're actually using character embeddings
         model = nn.DataParallel(model, gpu_ids)
         log.info(f'Loading checkpoint from {args.load_path}...')
         model = util.load_model(model, args.load_path, gpu_ids, return_step=False)
