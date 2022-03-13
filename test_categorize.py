@@ -31,7 +31,7 @@ from util import collate_fn, SQuAD, eval_dict_categorized
 
 def main(args):
     # Set up logging
-    type = "baseline"
+    type = "charembed"
     args.save_dir = util.get_save_dir(args.save_dir, args.name, training=False)
     log = util.get_logger(args.save_dir, args.name)
     log.info(f'Args: {dumps(vars(args), indent=4, sort_keys=True)}')
