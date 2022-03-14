@@ -416,179 +416,180 @@ def back_translation(data_path, output_path):
 
     print("Finished saving data into file.")
 
-# def back_translation2(data_path, output_path):
-#     """Stanford Question Answering Dataset (SQuAD).
+# original backtranslation
+def back_translation2(data_path, output_path):
+    """Stanford Question Answering Dataset (SQuAD).
 
-#     Each item in the dataset is a tuple with the following entries (in order):
-#         - context_idxs: Indices of the words in the context.
-#             Shape (context_len,).
-#         - context_char_idxs: Indices of the characters in the context.
-#             Shape (context_len, max_word_len).
-#         - question_idxs: Indices of the words in the question.
-#             Shape (question_len,).
-#         - question_char_idxs: Indices of the characters in the question.
-#             Shape (question_len, max_word_len).
-#         - y1: Index of word in the context where the answer begins.
-#             -1 if no answer.
-#         - y2: Index of word in the context where the answer ends.
-#             -1 if no answer.
-#         - id: ID of the example.
+    Each item in the dataset is a tuple with the following entries (in order):
+        - context_idxs: Indices of the words in the context.
+            Shape (context_len,).
+        - context_char_idxs: Indices of the characters in the context.
+            Shape (context_len, max_word_len).
+        - question_idxs: Indices of the words in the question.
+            Shape (question_len,).
+        - question_char_idxs: Indices of the characters in the question.
+            Shape (question_len, max_word_len).
+        - y1: Index of word in the context where the answer begins.
+            -1 if no answer.
+        - y2: Index of word in the context where the answer ends.
+            -1 if no answer.
+        - id: ID of the example.
 
-#     Args:
-#         data_path (str): Path to .npz file containing pre-processed dataset.
-#         use_v2 (bool): Whether to use SQuAD 2.0 questions. Otherwise only use SQuAD 1.1.
-#     """
+    Args:
+        data_path (str): Path to .npz file containing pre-processed dataset.
+        use_v2 (bool): Whether to use SQuAD 2.0 questions. Otherwise only use SQuAD 1.1.
+    """
 
-#     print("Starting to create the backtranslation dataset.")
+    print("Starting to create the backtranslation dataset.")
     
-#     dataset = np.load(data_path)
-#     context_idxs = torch.from_numpy(dataset['context_idxs']).long()
-#     context_char_idxs = torch.from_numpy(dataset['context_char_idxs']).long()
-#     question_idxs = torch.from_numpy(dataset['ques_idxs']).long()
-#     question_char_idxs = torch.from_numpy(dataset['ques_char_idxs']).long()
-#     y1s = torch.from_numpy(dataset['y1s']).long()
-#     y2s = torch.from_numpy(dataset['y2s']).long()
+    dataset = np.load(data_path)
+    context_idxs = torch.from_numpy(dataset['context_idxs']).long()
+    context_char_idxs = torch.from_numpy(dataset['context_char_idxs']).long()
+    question_idxs = torch.from_numpy(dataset['ques_idxs']).long()
+    question_char_idxs = torch.from_numpy(dataset['ques_char_idxs']).long()
+    y1s = torch.from_numpy(dataset['y1s']).long()
+    y2s = torch.from_numpy(dataset['y2s']).long()
 
-#     ids = torch.from_numpy(dataset['ids']).long()
-#     last_id = ids[-1].item()
+    ids = torch.from_numpy(dataset['ids']).long()
+    last_id = ids[-1].item()
 
-#     en_de_tokenizer = AutoTokenizer.from_pretrained("Helsinki-NLP/opus-mt-en-de")
-#     en_de_model = AutoModelForSeq2SeqLM.from_pretrained("Helsinki-NLP/opus-mt-en-de")
+    en_de_tokenizer = AutoTokenizer.from_pretrained("Helsinki-NLP/opus-mt-en-de")
+    en_de_model = AutoModelForSeq2SeqLM.from_pretrained("Helsinki-NLP/opus-mt-en-de")
 
-#     de_en_tokenizer = AutoTokenizer.from_pretrained("Helsinki-NLP/opus-mt-de-en")
-#     de_en_model = AutoModelForSeq2SeqLM.from_pretrained("Helsinki-NLP/opus-mt-de-en")
+    de_en_tokenizer = AutoTokenizer.from_pretrained("Helsinki-NLP/opus-mt-de-en")
+    de_en_model = AutoModelForSeq2SeqLM.from_pretrained("Helsinki-NLP/opus-mt-de-en")
 
-#     word2idx = json.loads(open('./data/word2idx.json', 'r').read())
-#     char2idx = json.loads(open('./data/char2idx.json', 'r').read())
+    word2idx = json.loads(open('./data/word2idx.json', 'r').read())
+    char2idx = json.loads(open('./data/char2idx.json', 'r').read())
 
-#     idx2word = dict((v,k) for k,v in word2idx.items())
-#     idx2char = dict((v,k) for k,v in char2idx.items())
+    idx2word = dict((v,k) for k,v in word2idx.items())
+    idx2char = dict((v,k) for k,v in char2idx.items())
 
-#     add_context_idxs = []
-#     add_context_chars_idxs = []
-#     add_question_idxs = []
-#     add_question_chars_idxs = []
-#     add_y1s = []
-#     add_y2s = []
-#     add_ids = []
+    add_context_idxs = []
+    add_context_chars_idxs = []
+    add_question_idxs = []
+    add_question_chars_idxs = []
+    add_y1s = []
+    add_y2s = []
+    add_ids = []
 
-#     batch_size = 10
-#     num_cores = multiprocessing.cpu_count()
+    batch_size = 10
+    num_cores = multiprocessing.cpu_count()
 
-#     for idx in range(0, len(ids), batch_size): 
-#         print("Processed " + str(idx) + " training entries.")
-#         new_y1s = y1s[idx:idx + batch_size]
-#         new_y2s = y2s[idx:idx + batch_size]
+    for idx in range(0, len(ids), batch_size): 
+        print("Processed " + str(idx) + " training entries.")
+        new_y1s = y1s[idx:idx + batch_size]
+        new_y2s = y2s[idx:idx + batch_size]
 
-#         new_context_idxs_list = context_idxs[idx:idx + batch_size]
-#         new_context_chars_idxs_list = context_char_idxs[idx:idx + batch_size]
+        new_context_idxs_list = context_idxs[idx:idx + batch_size]
+        new_context_chars_idxs_list = context_char_idxs[idx:idx + batch_size]
 
-#         new_question_idxs_list = question_idxs[idx:idx + batch_size]
-#         new_question_char_idxs_list = question_char_idxs[idx:idx + batch_size]
+        new_question_idxs_list = question_idxs[idx:idx + batch_size]
+        new_question_char_idxs_list = question_char_idxs[idx:idx + batch_size]
         
-#         # retrieve the sentences to use for translation
-#         # context_strings = Parallel(n_jobs=num_cores)(delayed(convert_to_string)(i, idx2word) for i in new_context_idxs_list) 
-#         question_strings = Parallel(n_jobs=num_cores)(delayed(convert_to_string)(i, idx2word) for i in new_question_idxs_list)
+        # retrieve the sentences to use for translation
+        context_strings = Parallel(n_jobs=num_cores)(delayed(convert_to_string)(i, idx2word) for i in new_context_idxs_list) 
+        question_strings = Parallel(n_jobs=num_cores)(delayed(convert_to_string)(i, idx2word) for i in new_question_idxs_list)
         
-#         # convert_to_string(new_context_idxs, idx2word)
-#         # question_string = convert_to_string(new_question_idxs, idx2word)
+        # convert_to_string(new_context_idxs, idx2word)
+        question_string = convert_to_string(new_question_idxs, idx2word)
 
-#         # consider translating only the question to speed up 
-#         # consider word level substitution
-#         # trans_context_strings_list = translate(translate(context_strings, en_de_model, en_de_tokenizer), de_en_model, de_en_tokenizer)
-#         trans_question_strings_list = translate(translate(question_strings, en_de_model, en_de_tokenizer), de_en_model, de_en_tokenizer)
+        # consider translating only the question to speed up 
+        # consider word level substitution
+        trans_context_strings_list = translate(translate(context_strings, en_de_model, en_de_tokenizer), de_en_model, de_en_tokenizer)
+        trans_question_strings_list = translate(translate(question_strings, en_de_model, en_de_tokenizer), de_en_model, de_en_tokenizer)
 
-#         # find the new answer
-#         # first, turn the start word of the answer and the end word of the answer into a 2gram by character level. 
-#         # do the 2-gram character of each word for all of the tokens in the new context. 
-#         # calculate the most likely candidates for start and end of the answer
-#         # calculate the  Jaccard similarity between the sets of character-level 2-grams
-#         # in the original answer token and new sentence token -> highest one is the new score
-#         for j in range(len(new_y1s)):
-#             new_context_idxs = new_context_idxs_list[j]
-#             new_context_chars_idxs = new_context_chars_idxs_list[j]
+        # find the new answer
+        # first, turn the start word of the answer and the end word of the answer into a 2gram by character level. 
+        # do the 2-gram character of each word for all of the tokens in the new context. 
+        # calculate the most likely candidates for start and end of the answer
+        # calculate the  Jaccard similarity between the sets of character-level 2-grams
+        # in the original answer token and new sentence token -> highest one is the new score
+        for j in range(len(new_y1s)):
+            new_context_idxs = new_context_idxs_list[j]
+            new_context_chars_idxs = new_context_chars_idxs_list[j]
             
-#             new_question_idxs = new_question_idxs_list[j]
-#             new_question_char_idxs = new_question_char_idxs_list[j]
+            new_question_idxs = new_question_idxs_list[j]
+            new_question_char_idxs = new_question_char_idxs_list[j]
 
-#             new_y1 = new_y1s[j]
-#             new_y2 = new_y2s[j]
+            new_y1 = new_y1s[j]
+            new_y2 = new_y2s[j]
 
-#             # trans_context_strings = trans_context_strings_list[j]
-#             trans_question_strings = trans_question_strings_list[j]
-#             # trans_context_words = trans_context_strings.split()
+            trans_context_strings = trans_context_strings_list[j]
+            trans_question_strings = trans_question_strings_list[j]
+            trans_context_words = trans_context_strings.split()
 
-#             # answer_start_word = idx2word[new_context_idxs[new_y1.item()].item()]
-#             # answer_end_word = idx2word[new_context_idxs[new_y2.item()].item()]
+            answer_start_word = idx2word[new_context_idxs[new_y1.item()].item()]
+            answer_end_word = idx2word[new_context_idxs[new_y2.item()].item()]
 
-#             # answer_idxs = [elem for elem in range(new_y1.item(), new_y2.item() + 1)]
-#             # answer_idxs = [new_context_idxs[elem] for elem in answer_idxs]
-#             # answer_string = convert_to_string(answer_idxs, idx2word)
+            answer_idxs = [elem for elem in range(new_y1.item(), new_y2.item() + 1)]
+            answer_idxs = [new_context_idxs[elem] for elem in answer_idxs]
+            answer_string = convert_to_string(answer_idxs, idx2word)
         
-#             # start_candidates = find_most_similar(answer_start_word, trans_context_words, bigrams, jaccard_similarity)
-#             # end_candidates = find_most_similar(answer_end_word, trans_context_words, bigrams, jaccard_similarity)
+            start_candidates = find_most_similar(answer_start_word, trans_context_words, bigrams, jaccard_similarity)
+            end_candidates = find_most_similar(answer_end_word, trans_context_words, bigrams, jaccard_similarity)
             
-#             # new_y1, new_y2 = find_best_answer(start_candidates, end_candidates, trans_context_words, answer_string.split())
+            new_y1, new_y2 = find_best_answer(start_candidates, end_candidates, trans_context_words, answer_string.split())
             
-#             # apply the unsqueeze to properly concatenate the things
-#             # randomly choose original or translated context queries
-#             # add_new_context_idxs = convert_to_indices(trans_context_strings, word2idx, context_idxs[idx]) 
-#             # add_new_context_chars_idxs = convert_to_char_indices(trans_context_strings, new_context_chars_idxs, char2idx, word2idx)
+            # apply the unsqueeze to properly concatenate the things
+            # randomly choose original or translated context queries
+            add_new_context_idxs = convert_to_indices(trans_context_strings, word2idx, context_idxs[idx]) 
+            add_new_context_chars_idxs = convert_to_char_indices(trans_context_strings, new_context_chars_idxs, char2idx, word2idx)
 
-#             # use_orig_context = np.random.binomial(1, 0.5, 1)[0]
-#             # if use_orig_context: # flip a coin
-#             #     add_new_context_idxs = new_context_idxs
-#             #     add_new_context_chars_idxs = new_context_chars_idxs
-#             # context_idxs = torch.cat((context_idxs, torch.unsqueeze(add_new_context_idxs, dim=0)), 0)
-#             # context_char_idxs = torch.cat((context_char_idxs, torch.unsqueeze(add_new_context_chars_idxs, dim=0)), 0)
+            use_orig_context = np.random.binomial(1, 0.5, 1)[0]
+            if use_orig_context: # flip a coin
+                add_new_context_idxs = new_context_idxs
+                add_new_context_chars_idxs = new_context_chars_idxs
+            context_idxs = torch.cat((context_idxs, torch.unsqueeze(add_new_context_idxs, dim=0)), 0)
+            context_char_idxs = torch.cat((context_char_idxs, torch.unsqueeze(add_new_context_chars_idxs, dim=0)), 0)
 
-#             add_new_question_idxs = convert_to_indices(trans_question_strings, word2idx, question_idxs[idx])       
-#             add_new_question_char_idxs = convert_to_char_indices(trans_question_strings, new_question_char_idxs, char2idx, word2idx)
+            add_new_question_idxs = convert_to_indices(trans_question_strings, word2idx, question_idxs[idx])       
+            add_new_question_char_idxs = convert_to_char_indices(trans_question_strings, new_question_char_idxs, char2idx, word2idx)
             
-#             # add_new_question_idxs = new_question_idxs
-#             # add_new_question_char_idxs = new_question_char_idxs
-#             # question_idxs = torch.cat((question_idxs, torch.unsqueeze(add_new_question_idxs, dim=0)), 0)
-#             # question_char_idxs = torch.cat((question_char_idxs, torch.unsqueeze(add_new_question_char_idxs, dim=0)), 0)  
+            add_new_question_idxs = new_question_idxs
+            add_new_question_char_idxs = new_question_char_idxs
+            question_idxs = torch.cat((question_idxs, torch.unsqueeze(add_new_question_idxs, dim=0)), 0)
+            question_char_idxs = torch.cat((question_char_idxs, torch.unsqueeze(add_new_question_char_idxs, dim=0)), 0)  
 
-#             # fix it so that the y1s and y2s correspond to the correct context
-#             # if use_orig_context:
-#             #     new_y1 = y1s[idx]
-#             #     new_y2 = y2s[idx]
+            # fix it so that the y1s and y2s correspond to the correct context
+            if use_orig_context:
+                new_y1 = y1s[idx]
+                new_y2 = y2s[idx]
 
-#             add_context_idxs.append(new_context_idxs.tolist())
-#             add_context_chars_idxs.append(new_context_chars_idxs.tolist())
-#             add_question_idxs.append(add_new_question_idxs.tolist())
-#             add_question_chars_idxs.append(add_new_question_char_idxs.tolist())
-#             add_y1s.append(new_y1.tolist())
-#             add_y2s.append(new_y2.tolist())
-#             add_ids.append(ids[idx].item() + last_id)
-#         print("finished batch")
+            add_context_idxs.append(new_context_idxs.tolist())
+            add_context_chars_idxs.append(new_context_chars_idxs.tolist())
+            add_question_idxs.append(add_new_question_idxs.tolist())
+            add_question_chars_idxs.append(add_new_question_char_idxs.tolist())
+            add_y1s.append(new_y1.tolist())
+            add_y2s.append(new_y2.tolist())
+            add_ids.append(ids[idx].item() + last_id)
+        print("finished batch")
 
         
-#     print("finished creating all tensors")
+    print("finished creating all tensors")
 
-#     context_idxs = torch.cat((context_idxs, torch.tensor(add_context_idxs)), 0)
-#     context_char_idxs = torch.cat((context_char_idxs, torch.tensor(add_context_chars_idxs)), 0)
+    context_idxs = torch.cat((context_idxs, torch.tensor(add_context_idxs)), 0)
+    context_char_idxs = torch.cat((context_char_idxs, torch.tensor(add_context_chars_idxs)), 0)
 
-#     question_idxs = torch.cat((question_idxs, torch.tensor(add_question_idxs)), 0)
-#     question_char_idxs = torch.cat((question_char_idxs, torch.tensor(add_question_chars_idxs)), 0)  
+    question_idxs = torch.cat((question_idxs, torch.tensor(add_question_idxs)), 0)
+    question_char_idxs = torch.cat((question_char_idxs, torch.tensor(add_question_chars_idxs)), 0)  
 
-#     y1s = torch.cat((y1s, torch.tensor(add_y1s)), 0)
-#     y2s = torch.cat((y2s, torch.tensor(add_y2s)), 0)
+    y1s = torch.cat((y1s, torch.tensor(add_y1s)), 0)
+    y2s = torch.cat((y2s, torch.tensor(add_y2s)), 0)
 
-#     ids = torch.cat((ids, torch.tensor(add_ids)), 0)  
-#     # save into a new file
-#     print("Finished processing all training examples. Saving into file.")
-#     np.savez_compressed(output_path, 
-#                         context_idxs=context_idxs, 
-#                         context_char_idxs=context_char_idxs, 
-#                         ques_idxs=question_idxs, 
-#                         ques_char_idxs=question_char_idxs, 
-#                         y1s=y1s, 
-#                         y2s=y2s, 
-#                         ids=ids)
+    ids = torch.cat((ids, torch.tensor(add_ids)), 0)  
+    # save into a new file
+    print("Finished processing all training examples. Saving into file.")
+    np.savez_compressed(output_path, 
+                        context_idxs=context_idxs, 
+                        context_char_idxs=context_char_idxs, 
+                        ques_idxs=question_idxs, 
+                        ques_char_idxs=question_char_idxs, 
+                        y1s=y1s, 
+                        y2s=y2s, 
+                        ids=ids)
 
-#     print("Finished saving data into file.")
+    print("Finished saving data into file.")
 
 
 def collate_fn(examples):
