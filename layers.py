@@ -330,55 +330,8 @@ class CoAttention(nn.Module):
 
         return L 
 
+
 class SelfAttention(nn.Module):
-    """Self attention, or self-matching attention, as described in the paper: https://www.microsoft.com/en-us/research/wp-content/uploads/2017/05/r-net.pdf
-    Args:
-        hidden_size (int): Size of hidden activations.
-        drop_prob (float): Probability of zero-ing out activations.
-    """
-    def __init__(self, input_dim, hidden_size, drop_prob=0.1, layers=2):
-        pass
-        super(SelfAttention, self).__init__()
-        self.drop_prob = drop_prob
-        self.layers = layers # how many layers should we apply?
-        self.hidden_size = hidden_size
-        self.input_dim = input_dim
-        
-        # build linear layers -- follow self attention strategy given in the paper, check that this makes sense
-        
-        self.W1 = nn.Linear(self.input_dim, self.hidden_size, bias=False)
-        self.W2 = nn.Linear(self.input_dim, self.hidden_size, bias=False)
-        self.V = nn.Linear(hidden_size, 1, bias=False)
-        self.tanh = nn.Tanh()
-        self.softmax = nn.Softmax()
-        self.g = nn.Sequential(nn.Linear(2*self.input_dim, 2*self.input_dim, bias=False), nn.Sigmoid()) # do we need sigmoid here??
-        self.rnn = nn.GRU(input_dim*2, self.hidden_size, bidirectional=True, num_layers=3, dropout=self.drop_prob) # can we expand the size of th emodel in any way? 
-
-    def forward(self, prev_att):
-        
-        p = prev_att
-        # a little bit of dropout before this attention layer; finding higher performance without extra dropout
-        p = F.dropout(p, self.drop_prob, self.training)
-
-        #use W1
-        W1 = self.W1(p).repeat(p.size(0), 1, 1, 1)
-        W2 = self.W2(p).repeat(p.size(0), 1, 1, 1)
-        p_long = p.repeat(p.size(0), 1, 1, 1)
-        s = self.tanh(W1.permute([1, 0, 2, 3]) + W2)
-        s = self.V(s)
-        a = F.softmax(s, dim=0)
-
-        #get c by first combining a and p, then applying self-gating
-        c = (a * p_long.permute([1, 0, 2, 3]))
-        c = c.sum(dim=0)
-        c = torch.cat((p, c), dim=2)
-        c = torch.mul(c, self.g(c))
-        # now feed into our rnn
-        self.rnn.flatten_parameters()
-        output, _ = self.rnn(c)
-        return F.dropout(output, self.drop_prob, self.training)
-
-class SelfAttentionOld(nn.Module):
     """Self attention, or self-matching attention, as described in the paper: https://www.microsoft.com/en-us/research/wp-content/uploads/2017/05/r-net.pdf
     Args:
         hidden_size (int): Size of hidden activations.

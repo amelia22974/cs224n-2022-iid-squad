@@ -210,7 +210,7 @@ def main(args):
     if args.split != 'test':
         results = util.eval_dict_categorized(gold_dict, pred_dict, args.use_squad_v2, category_dict)
         if args.use_squad_v2:
-            results_list = [[('NLL', nll_meter.avg), ('F1', results[i]['f1']),('EM', results[i]['em']),('avna', results[i]["avna"]), ('total', results[i]["total"])] for i in range(6)]
+            results_list = [[('NLL', nll_meter.avg), ('F1', results[i]['f1']),('EM', results[i]['em']),('avna', results[i]["avna"]), ('total', results[i]["total"])] for i in range(5)]
         else:
             results_list = [[('NLL', nll_meter.avg), ('F1', results[i]['f1']),('EM', results[i]['em'])] for i in range(5)]
 
