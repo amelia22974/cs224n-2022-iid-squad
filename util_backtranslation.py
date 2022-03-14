@@ -188,6 +188,7 @@ def span_corrupt(data_path, output_path):
     y2s = torch.cat((y2s, torch.tensor(add_y2s)), 0)
 
     ids = torch.cat((ids, torch.tensor(add_ids)), 0)  
+
     # save into a new file
     print("Finished processing all training examples. Saving into file.")
     np.savez_compressed(output_path, 
@@ -351,8 +352,9 @@ def back_translation(data_path, output_path):
     num_cores = multiprocessing.cpu_count()
 
     # try to parallize the batches all at once. 
-    for idx in range(0, len(ids), batch_size): 
+    for idx in range(0, 300, batch_size): 
         print("Processed " + str(idx) + " training entries.")
+        
         add_ids = [last_id + elem for elem in range(ids[idx].item(), ids[idx].item() + batch_size)]
         
         new_y1s = y1s[idx:idx + batch_size]
@@ -370,23 +372,6 @@ def back_translation(data_path, output_path):
         add_new_question_idxs = Parallel(n_jobs=num_cores)(delayed(convert_to_indices)(trans_question_strings_list[i], word2idx, new_question_idxs_list[i]) for i in range(len(trans_question_strings_list)))
         add_new_question_char_idxs = Parallel(n_jobs=num_cores)(delayed(convert_to_char_indices)(trans_question_strings_list[i], new_question_char_idxs_list[i], char2idx, word2idx) for i in range(len(trans_question_strings_list)))
 
-
-        # for j in range(len(new_y1s)):
-        #     new_context_idxs = new_context_idxs_list[j]
-        #     new_context_chars_idxs = new_context_chars_idxs_list[j]
-            
-        #     new_question_idxs = new_question_idxs_list[j]
-        #     new_question_char_idxs = new_question_char_idxs_list[j]
-
-        #     new_y1 = new_y1s[j]
-        #     new_y2 = new_y2s[j]
-
-        #     trans_question_strings = trans_question_strings_list[j]
-
-        #     add_new_question_idxs = convert_to_indices(trans_question_strings, word2idx, new_question_idxs)       
-        #     add_new_question_char_idxs = convert_to_char_indices(trans_question_strings, new_question_char_idxs, char2idx, word2idx)
-            
-
         add_context_idxs.extend(new_context_idxs_list)
         add_context_chars_idxs.extend(new_context_chars_idxs_list)
         add_question_idxs.extend(add_new_question_idxs)
@@ -395,20 +380,29 @@ def back_translation(data_path, output_path):
         add_y2s.extend(new_y2s)
         add_ids.extend(add_ids)
         print("finished batch")
-
-        
+   
     print("finished creating all tensors")
 
+    
+    add_context_idxs = [elem.tolist() for elem in add_context_idxs]
     context_idxs = torch.cat((context_idxs, torch.tensor(add_context_idxs)), 0)
+
+    add_context_chars_idxs = [elem.tolist() for elem in add_context_chars_idxs]
     context_char_idxs = torch.cat((context_char_idxs, torch.tensor(add_context_chars_idxs)), 0)
 
+    add_question_idxs = [elem.tolist() for elem in add_question_idxs]
     question_idxs = torch.cat((question_idxs, torch.tensor(add_question_idxs)), 0)
+
+    add_question_chars_idxs = [elem.tolist() for elem in add_question_chars_idxs]
     question_char_idxs = torch.cat((question_char_idxs, torch.tensor(add_question_chars_idxs)), 0)  
 
+    add_y1s = [elem.tolist() for elem in add_y1s]
     y1s = torch.cat((y1s, torch.tensor(add_y1s)), 0)
+
+    add_y1s = [elem.tolist() for elem in add_y2s]
     y2s = torch.cat((y2s, torch.tensor(add_y2s)), 0)
 
-    ids = torch.cat((ids, torch.tensor(add_ids)), 0)  
+    ids = torch.cat((ids, torch.tensor(add_ids)), 0)   
     # save into a new file
     print("Finished processing all training examples. Saving into file.")
     np.savez_compressed(output_path, 
